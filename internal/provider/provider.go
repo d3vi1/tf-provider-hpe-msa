@@ -46,7 +46,7 @@ type resolvedConfig struct {
 }
 
 func (p *msaProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
-	resp.TypeName = "hpe_msa"
+	resp.TypeName = "hpe"
 	resp.Version = p.version
 }
 

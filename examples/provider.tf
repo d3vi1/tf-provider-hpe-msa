@@ -7,7 +7,7 @@ terraform {
   }
 }
 
-provider "hpe_msa" {
+provider "hpe" {
   endpoint     = "https://msa.example.com"
   username     = "msa_user"
   password     = "example-password"

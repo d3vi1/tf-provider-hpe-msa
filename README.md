@@ -14,7 +14,7 @@ Milestone 0: bootstrap, CI, skeleton provider, and XML client scaffolding with m
 ## Provider configuration
 
 ```hcl
-provider "hpe_msa" {
+provider "hpe" {
   endpoint     = "https://msa.example.com"
   username     = "msa_user"
   password     = "example-password"

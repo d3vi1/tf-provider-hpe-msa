@@ -27,7 +27,7 @@ type hostDataSourceModel struct {
 }
 
 func (d *hostDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_host"
+	resp.TypeName = req.ProviderTypeName + "_msa_host"
 }
 
 func (d *hostDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
