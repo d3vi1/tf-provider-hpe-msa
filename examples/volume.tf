@@ -1,6 +1,6 @@
 resource "hpe_msa_volume" "example" {
   name          = "vol01"
   size          = "100GB"
-  pool          = "pool-a"
+  vdisk         = "A"
   allow_destroy = false
 }

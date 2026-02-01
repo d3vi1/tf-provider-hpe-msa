@@ -141,7 +141,8 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	_, err = r.client.Execute(ctx, "create", "volume", "vdisk", target, "size", size, name)
+	// MSA XML API expects pool + access parameters for volume creation.
+	_, err = r.client.Execute(ctx, "create", "volume", name, "pool", target, "size", size, "access", "no-access")
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to create volume", err.Error())
 		return
