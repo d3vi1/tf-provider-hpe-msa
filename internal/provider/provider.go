@@ -112,7 +112,9 @@ func (p *msaProvider) Configure(ctx context.Context, req provider.ConfigureReque
 }
 
 func (p *msaProvider) Resources(_ context.Context) []func() resource.Resource {
-	return nil
+	return []func() resource.Resource{
+		NewVolumeResource,
+	}
 }
 
 func (p *msaProvider) DataSources(_ context.Context) []func() datasource.DataSource {
