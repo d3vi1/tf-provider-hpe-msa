@@ -46,7 +46,6 @@ func (d *volumeDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 			"name": schema.StringAttribute{
 				Description: "Exact volume name to look up.",
 				Optional:    true,
-				Computed:    true,
 			},
 			"name_regex": schema.StringAttribute{
 				Description: "Regex to match a volume name (first match wins after sorting by name).",
