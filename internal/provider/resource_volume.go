@@ -144,8 +144,19 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 	// MSA XML API expects pool + access parameters for volume creation.
 	_, err = r.client.Execute(ctx, "create", "volume", name, "pool", target, "size", size, "access", "no-access")
 	if err != nil {
-		resp.Diagnostics.AddError("Unable to create volume", err.Error())
-		return
+		var apiErr msa.APIError
+		if errors.As(err, &apiErr) {
+			msg := strings.ToLower(apiErr.Status.Response)
+			if strings.Contains(msg, "volume was created") || strings.Contains(msg, "name is already in use") || strings.Contains(msg, "name already in use") {
+				// Some firmware revisions report a non-zero response even though the volume exists.
+			} else {
+				resp.Diagnostics.AddError("Unable to create volume", err.Error())
+				return
+			}
+		} else {
+			resp.Diagnostics.AddError("Unable to create volume", err.Error())
+			return
+		}
 	}
 
 	volume, err := r.waitForVolume(ctx, plan.Name.ValueString(), "")

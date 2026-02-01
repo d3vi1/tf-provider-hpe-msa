@@ -69,6 +69,7 @@ terraform import hpe_msa_volume.example SERIAL-NUMBER
 ## Data sources
 
 - `hpe_msa_pool` - lookup a pool by name (returns raw XML properties)
+- `hpe_msa_volume` - lookup a volume by name or regex (returns identifiers and properties)
 - `hpe_msa_host` - lookup a host by name (returns raw XML properties)
 
 ## Security
