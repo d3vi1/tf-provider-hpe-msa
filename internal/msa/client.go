@@ -297,7 +297,9 @@ func (c *Client) get(ctx context.Context, url string, headers map[string]string)
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
 	if err != nil {
