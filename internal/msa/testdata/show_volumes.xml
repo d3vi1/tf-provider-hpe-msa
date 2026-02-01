@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RESPONSE VERSION="L100">
+  <OBJECT basetype="status" name="status" oid="1">
+    <PROPERTY name="response-type" type="string">Success</PROPERTY>
+    <PROPERTY name="response-type-numeric" type="uint32">0</PROPERTY>
+    <PROPERTY name="response" type="string">OK</PROPERTY>
+    <PROPERTY name="return-code" type="sint32">1</PROPERTY>
+  </OBJECT>
+  <OBJECT basetype="volumes" name="volume" oid="42">
+    <PROPERTY name="volume-name" type="string">vol01</PROPERTY>
+    <PROPERTY name="serial-number" type="string">SN123</PROPERTY>
+    <PROPERTY name="durable-id" type="string">V1</PROPERTY>
+    <PROPERTY name="storage-poolname" type="string">pool-a</PROPERTY>
+    <PROPERTY name="virtual-diskname" type="string">pool-a</PROPERTY>
+    <PROPERTY name="size" type="string">100 GB</PROPERTY>
+    <PROPERTY name="size-numeric" type="uint64">12345</PROPERTY>
+  </OBJECT>
+</RESPONSE>

@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -184,17 +182,6 @@ func newTestClient(t *testing.T, endpoint string) *Client {
 	}
 
 	return client
-}
-
-func readFixture(t *testing.T, name string) []byte {
-	t.Helper()
-
-	path := filepath.Join("testdata", name)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read fixture %s: %v", name, err)
-	}
-	return data
 }
 
 func loginResponse(sessionKey string) []byte {

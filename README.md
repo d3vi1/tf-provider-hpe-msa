@@ -49,6 +49,23 @@ make testacc
 
 See `examples/` for provider configuration samples.
 
+### Volume
+
+```hcl
+resource "hpe_msa_volume" "example" {
+  name          = "vol01"
+  size          = "100GB"
+  pool          = "pool-a"
+  allow_destroy = false
+}
+```
+
+Import by serial number:
+
+```bash
+terraform import hpe_msa_volume.example SERIAL-NUMBER
+```
+
 ## Data sources
 
 - `hpe_msa_pool` - lookup a pool by name (returns raw XML properties)
