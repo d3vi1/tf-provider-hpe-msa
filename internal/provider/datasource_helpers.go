@@ -10,6 +10,7 @@ import (
 
 func findObjectByName(response msa.Response, name string, keys []string, entity string) (msa.Object, diag.Diagnostics) {
 	var diags diag.Diagnostics
+	original := strings.TrimSpace(name)
 	name = normalizeName(name)
 	if name == "" {
 		diags.AddError("Invalid name", "name must not be empty")
@@ -26,7 +27,7 @@ func findObjectByName(response msa.Response, name string, keys []string, entity 
 		}
 	}
 
-	diags.AddError(title(entity)+" not found", fmt.Sprintf("No %s named %q was returned by the array", entity, name))
+	diags.AddError(title(entity)+" not found", fmt.Sprintf("No %s named %q was returned by the array", entity, original))
 	return msa.Object{}, diags
 }
 
