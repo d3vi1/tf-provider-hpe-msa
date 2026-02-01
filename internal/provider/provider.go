@@ -116,7 +116,10 @@ func (p *msaProvider) Resources(_ context.Context) []func() resource.Resource {
 }
 
 func (p *msaProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{
+		NewPoolDataSource,
+		NewHostDataSource,
+	}
 }
 
 func resolveConfig(config providerConfig) (resolvedConfig, diag.Diagnostics) {

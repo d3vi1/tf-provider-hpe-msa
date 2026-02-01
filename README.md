@@ -49,6 +49,11 @@ make testacc
 
 See `examples/` for provider configuration samples.
 
+## Data sources
+
+- `hpe_msa_pool` - lookup a pool by name (returns raw XML properties)
+- `hpe_msa_host` - lookup a host by name (returns raw XML properties)
+
 ## Security
 
 This repo is public. Do not place IPs, usernames, passwords, or array identifiers in source control. Use local-only files such as `.env` or `msa-test-config.yaml` (both gitignored).

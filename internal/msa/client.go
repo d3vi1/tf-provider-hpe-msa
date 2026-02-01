@@ -12,12 +12,15 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
-	defaultTimeout = 30 * time.Second
-	maxBodySize    = 4 << 20
+	defaultTimeout     = 30 * time.Second
+	defaultSessionTTL  = 25 * time.Minute
+	maxBodySize        = 4 << 20
+	defaultMaxAttempts = 3
 )
 
 type Config struct {
@@ -26,13 +29,21 @@ type Config struct {
 	Password    string
 	InsecureTLS bool
 	Timeout     time.Duration
+	SessionTTL  time.Duration
+	Retry       RetryConfig
 }
 
 type Client struct {
-	baseURL    string
-	username   string
-	password   string
-	httpClient *http.Client
+	baseURL     string
+	username    string
+	password    string
+	httpClient  *http.Client
+	retryConfig RetryConfig
+	sessionTTL  time.Duration
+
+	mu           sync.Mutex
+	sessionKey   string
+	sessionUntil time.Time
 }
 
 func NewClient(cfg Config) (*Client, error) {
@@ -60,6 +71,12 @@ func NewClient(cfg Config) (*Client, error) {
 		timeout = defaultTimeout
 	}
 
+	retryConfig := cfg.Retry.withDefaults(defaultMaxAttempts)
+	sessionTTL := cfg.SessionTTL
+	if sessionTTL == 0 {
+		sessionTTL = defaultSessionTTL
+	}
+
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: cfg.InsecureTLS}
 
@@ -69,10 +86,12 @@ func NewClient(cfg Config) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL:    endpoint,
-		username:   cfg.Username,
-		password:   cfg.Password,
-		httpClient: client,
+		baseURL:     endpoint,
+		username:    cfg.Username,
+		password:    cfg.Password,
+		httpClient:  client,
+		retryConfig: retryConfig,
+		sessionTTL:  sessionTTL,
 	}, nil
 }
 
@@ -80,7 +99,7 @@ func (c *Client) Login(ctx context.Context) (string, error) {
 	hash := loginHash(c.username, c.password)
 	loginURL := fmt.Sprintf("%s/api/login/%s", c.baseURL, hash)
 
-	body, _, status, err := c.get(ctx, loginURL, nil)
+	body, _, status, err := c.getWithRetry(ctx, loginURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("login request failed: %w", err)
 	}
@@ -114,7 +133,7 @@ func (c *Client) Logout(ctx context.Context, sessionKey string) error {
 
 	logoutURL := fmt.Sprintf("%s/api/exit", c.baseURL)
 	headers := map[string]string{"sessionKey": sessionKey}
-	body, _, status, err := c.get(ctx, logoutURL, headers)
+	body, _, status, err := c.getWithRetry(ctx, logoutURL, headers)
 	if err != nil {
 		return fmt.Errorf("logout request failed: %w", err)
 	}
@@ -155,7 +174,7 @@ func (c *Client) Do(ctx context.Context, sessionKey, path string, query url.Valu
 	}
 
 	headers := map[string]string{"sessionKey": sessionKey}
-	body, _, status, err := c.get(ctx, fullURL, headers)
+	body, _, status, err := c.getWithRetry(ctx, fullURL, headers)
 	if err != nil {
 		return Response{}, fmt.Errorf("request failed: %w", err)
 	}
@@ -168,12 +187,38 @@ func (c *Client) Do(ctx context.Context, sessionKey, path string, query url.Valu
 		return Response{}, fmt.Errorf("response parse failed: %w", err)
 	}
 
-	statusObj, ok := response.Status()
-	if ok && !statusObj.Success() {
-		return Response{}, fmt.Errorf("command failed: %s", statusObj.Response)
+	if statusObj, ok := response.Status(); ok && !statusObj.Success() {
+		return Response{}, APIError{Status: statusObj}
 	}
 
 	return response, nil
+}
+
+func (c *Client) Command(ctx context.Context, sessionKey string, parts ...string) (Response, error) {
+	return c.Do(ctx, sessionKey, CommandPath(parts...), nil)
+}
+
+func (c *Client) Execute(ctx context.Context, parts ...string) (Response, error) {
+	sessionKey, err := c.ensureSession(ctx)
+	if err != nil {
+		return Response{}, err
+	}
+
+	resp, err := c.Command(ctx, sessionKey, parts...)
+	if err == nil {
+		return resp, nil
+	}
+
+	if IsSessionError(err) {
+		c.invalidateSession()
+		sessionKey, err = c.ensureSession(ctx)
+		if err != nil {
+			return Response{}, err
+		}
+		return c.Command(ctx, sessionKey, parts...)
+	}
+
+	return Response{}, err
 }
 
 func loginHash(username, password string) string {
@@ -187,6 +232,57 @@ func parseResponse(body []byte) (Response, error) {
 		return Response{}, err
 	}
 	return response, nil
+}
+
+func (c *Client) ensureSession(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.sessionKey != "" && time.Now().Before(c.sessionUntil) {
+		return c.sessionKey, nil
+	}
+
+	sessionKey, err := c.Login(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	c.sessionKey = sessionKey
+	c.sessionUntil = time.Now().Add(c.sessionTTL)
+
+	return sessionKey, nil
+}
+
+func (c *Client) invalidateSession() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.sessionKey = ""
+	c.sessionUntil = time.Time{}
+}
+
+func (c *Client) getWithRetry(ctx context.Context, url string, headers map[string]string) ([]byte, http.Header, int, error) {
+	var lastBody []byte
+	var lastHeader http.Header
+	var lastStatus int
+
+	err := doWithRetry(ctx, c.retryConfig, func() (bool, error) {
+		body, header, status, err := c.get(ctx, url, headers)
+		lastBody = body
+		lastHeader = header
+		lastStatus = status
+		if err != nil {
+			return true, err
+		}
+		if isRetryableStatus(status) {
+			return true, fmt.Errorf("retryable HTTP status %d", status)
+		}
+		return false, nil
+	})
+	if err != nil {
+		return lastBody, lastHeader, lastStatus, err
+	}
+	return lastBody, lastHeader, lastStatus, nil
 }
 
 func (c *Client) get(ctx context.Context, url string, headers map[string]string) ([]byte, http.Header, int, error) {
