@@ -40,7 +40,7 @@ type volumeResourceModel struct {
 }
 
 func (r *volumeResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_volume"
+	resp.TypeName = req.ProviderTypeName + "_msa_volume"
 }
 
 func (r *volumeResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {

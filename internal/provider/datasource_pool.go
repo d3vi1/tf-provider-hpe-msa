@@ -26,7 +26,7 @@ type poolDataSourceModel struct {
 }
 
 func (d *poolDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_pool"
+	resp.TypeName = req.ProviderTypeName + "_msa_pool"
 }
 
 func (d *poolDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
