@@ -244,13 +244,31 @@ func (r *snapshotResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	target := strings.TrimSpace(state.Name.ValueString())
+	snapshot, err := r.findSnapshot(ctx, state.Name.ValueString(), state.ID.ValueString())
+	if err != nil {
+		if errors.Is(err, errSnapshotNotFound) {
+			return
+		}
+		resp.Diagnostics.AddError("Unable to read snapshot for deletion", err.Error())
+		return
+	}
+
+	if !state.ID.IsNull() && state.ID.ValueString() != "" && snapshot.SerialNumber != state.ID.ValueString() {
+		resp.Diagnostics.AddError("Snapshot mismatch", "Snapshot serial number does not match state")
+		return
+	}
+	if !state.VolumeName.IsNull() && state.VolumeName.ValueString() != "" && !strings.EqualFold(snapshot.BaseVolumeName, state.VolumeName.ValueString()) {
+		resp.Diagnostics.AddError("Snapshot mismatch", "Snapshot volume does not match state")
+		return
+	}
+
+	target := strings.TrimSpace(snapshot.Name)
 	if target == "" {
 		resp.Diagnostics.AddError("Invalid state", "Snapshot name is required for deletion")
 		return
 	}
 
-	_, err := r.client.Execute(ctx, "delete", "snapshot", target)
+	_, err = r.client.Execute(ctx, "delete", "snapshot", target)
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to delete snapshot", err.Error())
 		return
