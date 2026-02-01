@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RESPONSE VERSION="L100">
+  <OBJECT basetype="status" name="status" oid="1">
+    <PROPERTY name="response-type" type="string">Error</PROPERTY>
+    <PROPERTY name="response-type-numeric" type="uint32">1</PROPERTY>
+    <PROPERTY name="response" type="string">Invalid credentials</PROPERTY>
+    <PROPERTY name="return-code" type="sint32">0</PROPERTY>
+  </OBJECT>
+</RESPONSE>

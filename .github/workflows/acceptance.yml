@@ -1,0 +1,29 @@
+name: acceptance
+
+on:
+  workflow_dispatch:
+
+jobs:
+  acceptance:
+    if: ${{ github.repository_owner == 'd3vi1' && secrets.MSA_ENDPOINT != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: acceptance tests
+        env:
+          TF_ACC: "1"
+          MSA_ENDPOINT: ${{ secrets.MSA_ENDPOINT }}
+          MSA_USERNAME: ${{ secrets.MSA_USERNAME }}
+          MSA_PASSWORD: ${{ secrets.MSA_PASSWORD }}
+          MSA_INSECURE_TLS: ${{ secrets.MSA_INSECURE_TLS }}
+          MSA_POOL: ${{ secrets.MSA_POOL }}
+          MSA_TEST_HOST_NAME: ${{ secrets.MSA_TEST_HOST_NAME }}
+          MSA_TEST_INITIATOR_WWPN: ${{ secrets.MSA_TEST_INITIATOR_WWPN }}
+          MSA_TEST_INITIATOR_IQN: ${{ secrets.MSA_TEST_INITIATOR_IQN }}
+        run: |
+          set -euo pipefail
+          go test -tags=acc ./... -count=1
