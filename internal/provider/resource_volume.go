@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -141,17 +144,63 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
+	_, err = r.findVolume(ctx, name, "")
+	if err == nil {
+		resp.Diagnostics.AddError("Volume already exists", "Import the volume or choose a different name.")
+		return
+	}
+	if err != nil && !errors.Is(err, errVolumeNotFound) {
+		resp.Diagnostics.AddError("Unable to check existing volumes", err.Error())
+		return
+	}
+
+	shouldValidate := false
 	// MSA XML API expects pool + access parameters for volume creation.
 	_, err = r.client.Execute(ctx, "create", "volume", name, "pool", target, "size", size, "access", "no-access")
 	if err != nil {
-		resp.Diagnostics.AddError("Unable to create volume", err.Error())
-		return
+		var apiErr msa.APIError
+		if errors.As(err, &apiErr) {
+			msg := strings.ToLower(apiErr.Status.Response)
+			if strings.Contains(msg, "volume was created") || strings.Contains(msg, "name is already in use") || strings.Contains(msg, "name already in use") {
+				// Some firmware revisions report a non-zero response even though the volume exists.
+				shouldValidate = true
+			} else {
+				resp.Diagnostics.AddError("Unable to create volume", err.Error())
+				return
+			}
+		} else {
+			resp.Diagnostics.AddError("Unable to create volume", err.Error())
+			return
+		}
 	}
 
 	volume, err := r.waitForVolume(ctx, plan.Name.ValueString(), "")
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to read volume after create", err.Error())
 		return
+	}
+
+	if shouldValidate {
+		if !volumeMatchesTarget(volume, target) {
+			resp.Diagnostics.AddError(
+				"Volume name collision",
+				fmt.Sprintf("Volume %q exists but does not match pool/vdisk %q.", name, target),
+			)
+			return
+		}
+
+		match, err := volumeSizeMatches(size, volume)
+		if err != nil {
+			resp.Diagnostics.AddError("Unable to verify existing volume size", err.Error())
+			return
+		}
+		if !match {
+			resp.Diagnostics.AddError(
+				"Volume name collision",
+				fmt.Sprintf("Volume %q exists but does not match requested size %q.", name, size),
+			)
+			return
+		}
 	}
 
 	state := volumeStateFromModel(plan, volume)
@@ -311,4 +360,100 @@ func volumeStateFromModel(model volumeResourceModel, volume *msa.Volume) volumeR
 	}
 
 	return state
+}
+
+func volumeMatchesTarget(volume *msa.Volume, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return true
+	}
+	if strings.EqualFold(volume.PoolName, target) {
+		return true
+	}
+	if strings.EqualFold(volume.VDiskName, target) {
+		return true
+	}
+	return false
+}
+
+func volumeSizeMatches(planSize string, volume *msa.Volume) (bool, error) {
+	planBytes, err := parseSizeToBytes(planSize)
+	if err != nil {
+		return false, err
+	}
+	if volume.SizeNumeric == "" {
+		return false, errors.New("volume size-numeric is missing")
+	}
+	blocks, err := strconv.ParseInt(volume.SizeNumeric, 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("invalid size-numeric %q", volume.SizeNumeric)
+	}
+	volumeBytes := blocks * 512
+	diff := int64(math.Abs(float64(planBytes - volumeBytes)))
+	tolerance := sizeTolerance(planBytes)
+	return diff <= tolerance, nil
+}
+
+func sizeTolerance(planBytes int64) int64 {
+	const minTolerance = int64(8 * 1024 * 1024)
+	relative := int64(float64(planBytes) * 0.001)
+	if relative < minTolerance {
+		return minTolerance
+	}
+	return relative
+}
+
+func parseSizeToBytes(raw string) (int64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, errors.New("size is required")
+	}
+
+	matches := regexp.MustCompile(`^([0-9]*\.?[0-9]+)\s*([A-Za-z]+)?$`).FindStringSubmatch(raw)
+	if len(matches) != 3 {
+		return 0, fmt.Errorf("invalid size %q", raw)
+	}
+
+	value, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid size %q", raw)
+	}
+	if value <= 0 {
+		return 0, fmt.Errorf("invalid size %q", raw)
+	}
+
+	unit := strings.ToUpper(strings.TrimSpace(matches[2]))
+	if unit == "" {
+		return 0, fmt.Errorf("invalid size %q", raw)
+	}
+
+	decimalUnits := map[string]float64{
+		"B":  1,
+		"KB": 1e3,
+		"MB": 1e6,
+		"GB": 1e9,
+		"TB": 1e12,
+		"PB": 1e15,
+		"K":  1e3,
+		"M":  1e6,
+		"G":  1e9,
+		"T":  1e12,
+		"P":  1e15,
+	}
+	binaryUnits := map[string]float64{
+		"KIB": 1024,
+		"MIB": 1024 * 1024,
+		"GIB": 1024 * 1024 * 1024,
+		"TIB": 1024 * 1024 * 1024 * 1024,
+		"PIB": 1024 * 1024 * 1024 * 1024 * 1024,
+	}
+
+	if multiplier, ok := decimalUnits[unit]; ok {
+		return int64(value*multiplier + 0.5), nil
+	}
+	if multiplier, ok := binaryUnits[unit]; ok {
+		return int64(value*multiplier + 0.5), nil
+	}
+
+	return 0, fmt.Errorf("invalid size unit %q", unit)
 }
