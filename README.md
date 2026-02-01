@@ -66,6 +66,22 @@ Import by serial number:
 terraform import hpe_msa_volume.example SERIAL-NUMBER
 ```
 
+### Snapshot
+
+```hcl
+resource "hpe_msa_snapshot" "example" {
+  name          = "snap01"
+  volume_name   = hpe_msa_volume.example.name
+  allow_destroy = false
+}
+```
+
+Import by serial number:
+
+```bash
+terraform import hpe_msa_snapshot.example SERIAL-NUMBER
+```
+
 ## Data sources
 
 - `hpe_msa_pool` - lookup a pool by name (returns raw XML properties)

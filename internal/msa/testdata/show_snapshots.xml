@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RESPONSE VERSION="L100" REQUEST="show snapshots">
+  <OBJECT basetype="snapshots" name="snapshot" oid="1" format="rows">
+    <PROPERTY name="name" type="string" size="32">snap-test</PROPERTY>
+    <PROPERTY name="serial-number" type="string" size="32">00deadbeef0000000011223344556677</PROPERTY>
+    <PROPERTY name="durable-id" type="string" size="10">V10</PROPERTY>
+    <PROPERTY name="base-volume" type="string" size="32">vol-test</PROPERTY>
+    <PROPERTY name="master-volume-name" type="string" size="32">vol-test</PROPERTY>
+    <PROPERTY name="storage-pool-name" type="string" size="32">A</PROPERTY>
+    <PROPERTY name="virtual-disk-name" type="string" size="32">A</PROPERTY>
+    <PROPERTY name="total-size" type="string" size="16">1.0GB</PROPERTY>
+    <PROPERTY name="total-size-numeric" type="uint64" size="16">1953125</PROPERTY>
+  </OBJECT>
+  <OBJECT basetype="status" name="status" oid="2">
+    <PROPERTY name="response-type" type="string" size="12">Success</PROPERTY>
+    <PROPERTY name="response-type-numeric" type="uint32" size="12">0</PROPERTY>
+    <PROPERTY name="response" type="string" size="180">Command completed successfully.</PROPERTY>
+    <PROPERTY name="return-code" type="sint32" size="15">0</PROPERTY>
+  </OBJECT>
+</RESPONSE>
