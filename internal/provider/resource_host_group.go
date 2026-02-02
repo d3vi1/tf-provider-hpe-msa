@@ -256,7 +256,7 @@ func (r *hostGroupResource) Update(ctx context.Context, req resource.UpdateReque
 			resp.Diagnostics.AddError("Unable to read host group after update", err.Error())
 			return
 		}
-		addHosts, removeHosts = diffHostGroupMembers(desiredHosts, hostNames(group.Hosts))
+		_, removeHosts = diffHostGroupMembers(desiredHosts, hostNames(group.Hosts))
 	}
 
 	if len(removeHosts) > 0 {
