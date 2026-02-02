@@ -4,7 +4,7 @@ Production-quality Terraform provider for HPE MSA 2050 arrays (firmware VL270P00
 
 ## Status
 
-Implemented resources: volumes, snapshots, initiators, hosts, host initiator membership, and volume mappings. Pending: clones, acceptance tests, and hardening.
+Implemented resources: volumes, snapshots, clones (snapshot-based), initiators, hosts, host initiator membership, and volume mappings. Pending: acceptance tests and hardening.
 
 ## Requirements
 
@@ -83,6 +83,23 @@ Import by serial number:
 
 ```bash
 terraform import hpe_msa_snapshot.example SERIAL-NUMBER
+```
+
+### Clone (from snapshot)
+
+```hcl
+resource "hpe_msa_clone" "example" {
+  name            = "clone-from-snap"
+  source_snapshot = hpe_msa_snapshot.example.name
+  destination_pool = "A"
+  allow_destroy   = false
+}
+```
+
+Import by serial number:
+
+```bash
+terraform import hpe_msa_clone.example SERIAL-NUMBER
 ```
 
 ### Initiator + Host
