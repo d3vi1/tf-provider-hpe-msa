@@ -118,6 +118,7 @@ func (p *msaProvider) Resources(_ context.Context) []func() resource.Resource {
 		NewInitiatorResource,
 		NewHostResource,
 		NewHostInitiatorResource,
+		NewVolumeMappingResource,
 	}
 }
 

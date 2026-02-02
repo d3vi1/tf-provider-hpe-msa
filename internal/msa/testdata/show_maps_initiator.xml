@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RESPONSE VERSION="L100" REQUEST="show maps initiator">
+  <OBJECT basetype="host-group-view" name="host-group-view" oid="1" format="labeled">
+    <PROPERTY name="durable-id" type="string">HG0</PROPERTY>
+    <PROPERTY name="serial-number" type="string">00c0ff3cab9c00000000000001010000</PROPERTY>
+    <PROPERTY name="group-name" type="string">TestGroup.*.*</PROPERTY>
+    <OBJECT basetype="host-view-mappings" name="volume-view" oid="2" format="rows">
+      <PROPERTY name="volume" type="string">volA</PROPERTY>
+      <PROPERTY name="volume-serial" type="string">00c0ff3cab9c00000000000002010000</PROPERTY>
+      <PROPERTY name="lun" type="string">12</PROPERTY>
+      <PROPERTY name="access" type="string">read-write</PROPERTY>
+      <PROPERTY name="ports" type="string">1,2</PROPERTY>
+    </OBJECT>
+  </OBJECT>
+  <OBJECT basetype="status" name="status" oid="3">
+    <PROPERTY name="response-type" type="string">Success</PROPERTY>
+    <PROPERTY name="response-type-numeric" type="uint32">0</PROPERTY>
+    <PROPERTY name="response" type="string">Command completed successfully.</PROPERTY>
+    <PROPERTY name="return-code" type="sint32">0</PROPERTY>
+  </OBJECT>
+</RESPONSE>
