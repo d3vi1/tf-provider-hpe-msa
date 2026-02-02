@@ -131,7 +131,7 @@ func (r *initiatorResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	state, diag := initiatorStateFromModel(ctx, plan, initiator)
+	state, diag := initiatorStateFromModel(ctx, plan, initiator, true)
 	resp.Diagnostics.Append(diag...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -151,7 +151,7 @@ func (r *initiatorResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	initID := strings.TrimSpace(state.InitiatorID.ValueString())
+	initID := initiatorLookupID(state)
 	nickname := strings.TrimSpace(state.Nickname.ValueString())
 	if initID == "" && nickname == "" {
 		resp.Diagnostics.AddError("Invalid state", "initiator_id is required")
@@ -168,7 +168,7 @@ func (r *initiatorResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	newState, diag := initiatorStateFromModel(ctx, state, initiator)
+	newState, diag := initiatorStateFromModel(ctx, state, initiator, false)
 	resp.Diagnostics.Append(diag...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -208,7 +208,7 @@ func (r *initiatorResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	newState, diag := initiatorStateFromModel(ctx, plan, initiator)
+	newState, diag := initiatorStateFromModel(ctx, plan, initiator, true)
 	resp.Diagnostics.Append(diag...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -236,7 +236,13 @@ func (r *initiatorResource) Delete(ctx context.Context, req resource.DeleteReque
 		return
 	}
 
-	initID := strings.TrimSpace(state.InitiatorID.ValueString())
+	initID := ""
+	if !state.ID.IsNull() && !state.ID.IsUnknown() {
+		initID = strings.TrimSpace(state.ID.ValueString())
+	}
+	if initID == "" {
+		initID = strings.TrimSpace(state.InitiatorID.ValueString())
+	}
 	if initID == "" {
 		resp.Diagnostics.AddError("Invalid state", "initiator_id is required for deletion")
 		return
@@ -285,17 +291,33 @@ func (r *initiatorResource) setInitiator(ctx context.Context, id, nickname strin
 	return err
 }
 
-func initiatorStateFromModel(ctx context.Context, model initiatorResourceModel, initiator *msa.Initiator) (initiatorResourceModel, diag.Diagnostics) {
+func initiatorStateFromModel(ctx context.Context, model initiatorResourceModel, initiator *msa.Initiator, preservePlan bool) (initiatorResourceModel, diag.Diagnostics) {
 	state := model
 	var diags diag.Diagnostics
 
-	state.InitiatorID = types.StringValue(initiator.ID)
-	state.ID = types.StringValue(initiator.ID)
-	if initiator.Nickname != "" {
+	if !model.InitiatorID.IsNull() && !model.InitiatorID.IsUnknown() && strings.TrimSpace(model.InitiatorID.ValueString()) != "" {
+		state.InitiatorID = types.StringValue(strings.TrimSpace(model.InitiatorID.ValueString()))
+	} else if initiator.ID != "" {
+		state.InitiatorID = types.StringValue(initiator.ID)
+	}
+	if initiator.ID != "" {
+		state.ID = types.StringValue(initiator.ID)
+	}
+	if preservePlan && !model.Nickname.IsNull() && !model.Nickname.IsUnknown() && strings.TrimSpace(model.Nickname.ValueString()) != "" {
+		state.Nickname = types.StringValue(strings.TrimSpace(model.Nickname.ValueString()))
+	} else if initiator.Nickname != "" {
 		state.Nickname = types.StringValue(initiator.Nickname)
 	}
-	if initiator.Profile != "" {
-		state.Profile = types.StringValue(initiator.Profile)
+	if preservePlan && !model.Profile.IsNull() && !model.Profile.IsUnknown() && strings.TrimSpace(model.Profile.ValueString()) != "" {
+		state.Profile = types.StringValue(strings.TrimSpace(model.Profile.ValueString()))
+	} else if initiator.Profile != "" {
+		apiProfile := strings.TrimSpace(initiator.Profile)
+		if !model.Profile.IsNull() && !model.Profile.IsUnknown() && strings.TrimSpace(model.Profile.ValueString()) != "" &&
+			strings.EqualFold(model.Profile.ValueString(), apiProfile) {
+			state.Profile = types.StringValue(strings.TrimSpace(model.Profile.ValueString()))
+		} else {
+			state.Profile = types.StringValue(strings.ToLower(apiProfile))
+		}
 	}
 	if initiator.HostID != "" {
 		state.HostID = types.StringValue(initiator.HostID)
@@ -312,4 +334,13 @@ func initiatorStateFromModel(ctx context.Context, model initiatorResourceModel, 
 	state.Properties = propsValue
 
 	return state, diags
+}
+
+func initiatorLookupID(state initiatorResourceModel) string {
+	if !state.ID.IsNull() && !state.ID.IsUnknown() {
+		if value := strings.TrimSpace(state.ID.ValueString()); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(state.InitiatorID.ValueString())
 }
