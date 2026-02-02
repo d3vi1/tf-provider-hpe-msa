@@ -3,6 +3,7 @@
 package acceptance
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/d3vi1/tf-provider-hpe-msa/internal/msa"
 	"github.com/d3vi1/tf-provider-hpe-msa/internal/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -50,6 +52,10 @@ func accVolumeConfig(name string) string {
 	password := os.Getenv("MSA_PASSWORD")
 	insecure := accBoolEnv("MSA_INSECURE_TLS")
 	pool := os.Getenv("MSA_POOL")
+	poolBlock := ""
+	if strings.TrimSpace(pool) != "" {
+		poolBlock = fmt.Sprintf("  pool          = %q\n", pool)
+	}
 
 	return fmt.Sprintf(`
 provider "hpe" {
@@ -62,19 +68,39 @@ provider "hpe" {
 resource "hpe_msa_volume" "test" {
   name          = %q
   size          = "1GB"
-  pool          = %q
+%s
   allow_destroy = true
 }
-`, endpoint, username, password, insecure, name, pool)
+`, endpoint, username, password, insecure, name, poolBlock)
 }
 
 func accCheckVolumeDestroyed(state *terraform.State) error {
+	client, err := accClient()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	response, err := client.Execute(ctx, "show", "volumes")
+	if err != nil {
+		return fmt.Errorf("query volumes: %w", err)
+	}
+	volumes := msa.VolumesFromResponse(response)
+
 	for _, rs := range state.RootModule().Resources {
 		if rs.Type != "hpe_msa_volume" {
 			continue
 		}
-		if rs.Primary.ID != "" {
-			return fmt.Errorf("volume %s still present in state", rs.Primary.ID)
+		id := rs.Primary.ID
+		name := rs.Primary.Attributes["name"]
+		for _, volume := range volumes {
+			if id != "" && volume.SerialNumber == id {
+				return fmt.Errorf("volume %s still exists on array", id)
+			}
+			if name != "" && strings.EqualFold(volume.Name, name) {
+				return fmt.Errorf("volume %s still exists on array", name)
+			}
 		}
 	}
 	return nil
@@ -85,8 +111,6 @@ func requireAccEnv(t *testing.T) {
 		"MSA_ENDPOINT",
 		"MSA_USERNAME",
 		"MSA_PASSWORD",
-		"MSA_INSECURE_TLS",
-		"MSA_POOL",
 	}
 
 	for _, key := range required {
@@ -115,4 +139,13 @@ func accBoolEnv(key string) bool {
 		return false
 	}
 	return parsed
+}
+
+func accClient() (*msa.Client, error) {
+	return msa.NewClient(msa.Config{
+		Endpoint:    os.Getenv("MSA_ENDPOINT"),
+		Username:    os.Getenv("MSA_USERNAME"),
+		Password:    os.Getenv("MSA_PASSWORD"),
+		InsecureTLS: accBoolEnv("MSA_INSECURE_TLS"),
+	})
 }
