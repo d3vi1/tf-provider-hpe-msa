@@ -32,6 +32,13 @@ func TestBuildTargetSpec(t *testing.T) {
 	}
 }
 
+func TestBuildTargetSpecInvalidHostGroupName(t *testing.T) {
+	_, diags := buildTargetSpec(stringValueOrNull("host_group"), stringValueOrNull("bad,name"))
+	if !diags.HasError() {
+		t.Fatalf("expected diagnostics for invalid host_group name")
+	}
+}
+
 func TestNormalizeAccess(t *testing.T) {
 	cases := map[string]string{
 		"rw":         "read-write",

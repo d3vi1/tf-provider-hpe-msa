@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -250,30 +251,25 @@ func (v hostGroupNameValidator) ValidateString(_ context.Context, req validator.
 		return
 	}
 
-	trimmed := strings.TrimSpace(req.ConfigValue.ValueString())
+	if err := validateHostGroupNameValue(req.ConfigValue.ValueString()); err != nil {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid host group name",
+			err.Error(),
+		)
+	}
+}
+
+func validateHostGroupNameValue(value string) error {
+	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		resp.Diagnostics.AddAttributeError(
-			req.Path,
-			"Invalid host group name",
-			"host group name must be non-empty after trimming whitespace.",
-		)
-		return
+		return fmt.Errorf("host group name must be non-empty after trimming whitespace.")
 	}
-
 	if len([]byte(trimmed)) > maxHostGroupNameBytes {
-		resp.Diagnostics.AddAttributeError(
-			req.Path,
-			"Invalid host group name",
-			"host group name must be 32 bytes or fewer.",
-		)
-		return
+		return fmt.Errorf("host group name must be 32 bytes or fewer.")
 	}
-
 	if strings.ContainsAny(trimmed, "\",.<\\\\") {
-		resp.Diagnostics.AddAttributeError(
-			req.Path,
-			"Invalid host group name",
-			"host group name cannot include \", . < or \\.",
-		)
+		return fmt.Errorf("host group name cannot include \", . < or \\.")
 	}
+	return nil
 }

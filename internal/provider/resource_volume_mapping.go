@@ -344,6 +344,10 @@ func buildTargetSpec(targetType types.String, targetName types.String) (string, 
 	case "host":
 		return fmt.Sprintf("%s.*", nameValue), diags
 	case "host_group":
+		if err := validateHostGroupNameValue(nameValue); err != nil {
+			diags.AddError("Invalid target_name", err.Error())
+			return "", diags
+		}
 		return fmt.Sprintf("%s.*.*", nameValue), diags
 	case "initiator":
 		return nameValue, diags

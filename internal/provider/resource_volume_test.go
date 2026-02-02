@@ -172,3 +172,23 @@ func TestPoolNamesFromResponse(t *testing.T) {
 		t.Fatalf("unexpected pool names: %v", names)
 	}
 }
+
+func TestVolumeStateFromModelSCSIWWN(t *testing.T) {
+	model := volumeResourceModel{}
+	volume := &msa.Volume{
+		Name:         "vol01",
+		SerialNumber: "SN123",
+		WWN:          "600c0ff0000000000000000000000001",
+	}
+
+	state := volumeStateFromModel(model, volume)
+	if state.SCSIWWN.IsNull() || state.SCSIWWN.ValueString() != volume.WWN {
+		t.Fatalf("expected scsi_wwn to be set from volume wwn")
+	}
+
+	volume.WWN = ""
+	state = volumeStateFromModel(model, volume)
+	if !state.SCSIWWN.IsNull() {
+		t.Fatalf("expected scsi_wwn to be null when wwn missing")
+	}
+}

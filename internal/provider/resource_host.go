@@ -74,6 +74,9 @@ func (r *hostResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Description: "Optional host group name to add the host to.",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.String{
+					hostGroupNameValidator{},
+				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
