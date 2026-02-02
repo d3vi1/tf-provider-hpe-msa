@@ -160,8 +160,19 @@ func (r *cloneResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	_, err = r.client.Execute(ctx, parts...)
 	if err != nil {
-		resp.Diagnostics.AddError("Unable to copy volume", err.Error())
-		return
+		var apiErr msa.APIError
+		if errors.As(err, &apiErr) {
+			msg := strings.ToLower(apiErr.Status.Response)
+			if strings.Contains(msg, "name already in use") || strings.Contains(msg, "already exists") {
+				// Continue to read existing clone by name.
+			} else {
+				resp.Diagnostics.AddError("Unable to copy volume", err.Error())
+				return
+			}
+		} else {
+			resp.Diagnostics.AddError("Unable to copy volume", err.Error())
+			return
+		}
 	}
 
 	volume, err := r.waitForVolume(ctx, name, "")
@@ -221,7 +232,7 @@ func (r *cloneResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	if state.AllowDestroy.IsNull() || !state.AllowDestroy.ValueBool() {
+	if state.AllowDestroy.IsUnknown() || state.AllowDestroy.IsNull() || !state.AllowDestroy.ValueBool() {
 		resp.Diagnostics.AddError(
 			"Deletion blocked",
 			"Set allow_destroy = true to permit clone deletion.",
@@ -289,7 +300,7 @@ func (r *cloneResource) findVolume(ctx context.Context, name, id string) (*msa.V
 }
 
 func (r *cloneResource) waitForVolume(ctx context.Context, name, id string) (*msa.Volume, error) {
-	waits := []time.Duration{1 * time.Second, 2 * time.Second, 3 * time.Second}
+	waits := []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 15 * time.Second, 30 * time.Second}
 	for i, wait := range waits {
 		volume, err := r.findVolume(ctx, name, id)
 		if err == nil {
