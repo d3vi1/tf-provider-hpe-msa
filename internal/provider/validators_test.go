@@ -14,6 +14,7 @@ func TestIsValidInitiatorID(t *testing.T) {
 		"500601603badbeef",
 		"50-06-01-60-3b-ad-be-ef",
 		"iqn.1993-08.org.debian:01:aaa",
+		"IQN.1993-08.org.example:foo",
 		"eui.02004567A425678D",
 		"naa.50060160A3B3BEEF",
 		"naa.50060160A3B3BEEF50060160A3B3BEEF",

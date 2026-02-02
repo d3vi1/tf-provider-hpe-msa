@@ -74,12 +74,13 @@ func isValidIQN(value string) bool {
 	if strings.ContainsAny(value, " \t\r\n") {
 		return false
 	}
-	parts := strings.SplitN(value, ":", 2)
+	lower := strings.ToLower(value)
+	parts := strings.SplitN(lower, ":", 2)
 	if len(parts) != 2 {
 		return false
 	}
 	prefix := strings.TrimSpace(parts[0])
-	if !strings.HasPrefix(strings.ToLower(prefix), "iqn.") {
+	if !strings.HasPrefix(prefix, "iqn.") {
 		return false
 	}
 	base := strings.TrimPrefix(prefix, "iqn.")
