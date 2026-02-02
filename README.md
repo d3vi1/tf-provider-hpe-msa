@@ -33,6 +33,7 @@ These are used by local tools and acceptance tests. Do **not** commit real value
 - `MSA_INSECURE_TLS` (`true`/`false`)
 - `MSA_POOL` (or vdisk/pool name for volume placement)
 - Optional: `MSA_TEST_HOST_NAME`, `MSA_TEST_INITIATOR_WWPN`, `MSA_TEST_INITIATOR_IQN`
+- Optional: `MSA_TEST_PREFIX` (prefix for acceptance-test resource names)
 
 ## Development
 
