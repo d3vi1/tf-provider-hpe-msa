@@ -6,6 +6,12 @@ Production-quality Terraform provider for HPE MSA 2050 arrays (firmware VL270P00
 
 Implemented resources: volumes, snapshots, clones (snapshot-based), initiators, hosts, host groups, host initiator membership, and volume mappings. Pending: acceptance tests and hardening.
 
+## Compatibility and scope
+
+- This provider implements only the embedded XML API used by MSA Gen <=5 arrays.
+- Testing has been performed only against HPE MSA 2050 hardware.
+- REST (Gen6) and/or Swordfish support is not implemented. Contributions are welcome, but we do not have hardware to validate those APIs.
+
 ## Requirements
 
 - Go 1.22+
