@@ -4,7 +4,7 @@ Production-quality Terraform provider for HPE MSA 2050 arrays (firmware VL270P00
 
 ## Status
 
-Implemented resources: volumes, snapshots, initiators, hosts, and host initiator membership. Pending: clones, mappings, acceptance tests, and hardening.
+Implemented resources: volumes, snapshots, initiators, hosts, host initiator membership, and volume mappings. Pending: clones, acceptance tests, and hardening.
 
 ## Requirements
 
@@ -129,6 +129,25 @@ Import by host and initiator ID:
 
 ```bash
 terraform import hpe_msa_host_initiator.member tf-host-01:20000000000000c2
+```
+
+### Volume mapping
+
+```hcl
+resource "hpe_msa_volume_mapping" "example" {
+  volume_name = hpe_msa_volume.example.name
+  target_type = "host"
+  target_name = hpe_msa_host.example.name
+  access      = "read-write"
+  lun         = "10"
+  ports       = ["a1", "b1"]
+}
+```
+
+Import by volume name, target type, and target name:
+
+```bash
+terraform import hpe_msa_volume_mapping.example vol01:host:Host1
 ```
 
 ## Data sources
