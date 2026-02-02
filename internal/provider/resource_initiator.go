@@ -131,7 +131,7 @@ func (r *initiatorResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	state, diag := initiatorStateFromModel(ctx, plan, initiator)
+	state, diag := initiatorStateFromModel(ctx, plan, initiator, true)
 	resp.Diagnostics.Append(diag...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -151,7 +151,13 @@ func (r *initiatorResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	initID := strings.TrimSpace(state.InitiatorID.ValueString())
+	initID := ""
+	if !state.ID.IsNull() && !state.ID.IsUnknown() {
+		initID = strings.TrimSpace(state.ID.ValueString())
+	}
+	if initID == "" {
+		initID = strings.TrimSpace(state.InitiatorID.ValueString())
+	}
 	nickname := strings.TrimSpace(state.Nickname.ValueString())
 	if initID == "" && nickname == "" {
 		resp.Diagnostics.AddError("Invalid state", "initiator_id is required")
@@ -168,7 +174,7 @@ func (r *initiatorResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	newState, diag := initiatorStateFromModel(ctx, state, initiator)
+	newState, diag := initiatorStateFromModel(ctx, state, initiator, false)
 	resp.Diagnostics.Append(diag...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -208,7 +214,7 @@ func (r *initiatorResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	newState, diag := initiatorStateFromModel(ctx, plan, initiator)
+	newState, diag := initiatorStateFromModel(ctx, plan, initiator, true)
 	resp.Diagnostics.Append(diag...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -291,7 +297,7 @@ func (r *initiatorResource) setInitiator(ctx context.Context, id, nickname strin
 	return err
 }
 
-func initiatorStateFromModel(ctx context.Context, model initiatorResourceModel, initiator *msa.Initiator) (initiatorResourceModel, diag.Diagnostics) {
+func initiatorStateFromModel(ctx context.Context, model initiatorResourceModel, initiator *msa.Initiator, preservePlan bool) (initiatorResourceModel, diag.Diagnostics) {
 	state := model
 	var diags diag.Diagnostics
 
@@ -303,15 +309,15 @@ func initiatorStateFromModel(ctx context.Context, model initiatorResourceModel, 
 	if initiator.ID != "" {
 		state.ID = types.StringValue(initiator.ID)
 	}
-	if !model.Nickname.IsNull() && !model.Nickname.IsUnknown() && strings.TrimSpace(model.Nickname.ValueString()) != "" {
+	if preservePlan && !model.Nickname.IsNull() && !model.Nickname.IsUnknown() && strings.TrimSpace(model.Nickname.ValueString()) != "" {
 		state.Nickname = types.StringValue(strings.TrimSpace(model.Nickname.ValueString()))
 	} else if initiator.Nickname != "" {
 		state.Nickname = types.StringValue(initiator.Nickname)
 	}
-	if !model.Profile.IsNull() && !model.Profile.IsUnknown() && strings.TrimSpace(model.Profile.ValueString()) != "" {
+	if preservePlan && !model.Profile.IsNull() && !model.Profile.IsUnknown() && strings.TrimSpace(model.Profile.ValueString()) != "" {
 		state.Profile = types.StringValue(strings.TrimSpace(model.Profile.ValueString()))
 	} else if initiator.Profile != "" {
-		state.Profile = types.StringValue(initiator.Profile)
+		state.Profile = types.StringValue(strings.ToLower(initiator.Profile))
 	}
 	if initiator.HostID != "" {
 		state.HostID = types.StringValue(initiator.HostID)
