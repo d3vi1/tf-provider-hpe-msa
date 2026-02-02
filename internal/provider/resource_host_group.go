@@ -62,6 +62,9 @@ func (r *hostGroupResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Description: "Host names to include in the host group.",
 				Required:    true,
 				ElementType: types.StringType,
+				Validators: []validator.Set{
+					hostNamesSetValidator{},
+				},
 				PlanModifiers: []planmodifier.Set{
 					setplanmodifier.UseStateForUnknown(),
 				},
@@ -135,7 +138,7 @@ func (r *hostGroupResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	if existing, err := r.findHostGroup(ctx, name); err == nil {
+	if existing, err := r.findHostGroupByName(ctx, name); err == nil {
 		resp.Diagnostics.AddError("Host group already exists", "Import the host group or choose a different name.")
 		_ = existing
 		return
@@ -181,7 +184,8 @@ func (r *hostGroupResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	group, err := r.findHostGroup(ctx, name)
+	id := strings.TrimSpace(state.ID.ValueString())
+	group, err := r.findHostGroup(ctx, name, id)
 	if err != nil {
 		if errors.Is(err, errHostGroupNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -214,8 +218,9 @@ func (r *hostGroupResource) Update(ctx context.Context, req resource.UpdateReque
 	}
 
 	currentName := strings.TrimSpace(state.Name.ValueString())
+	currentID := strings.TrimSpace(state.ID.ValueString())
 	desiredName := strings.TrimSpace(plan.Name.ValueString())
-	if currentName == "" || desiredName == "" {
+	if (currentName == "" && currentID == "") || desiredName == "" {
 		resp.Diagnostics.AddError("Invalid name", "name must be provided")
 		return
 	}
@@ -230,6 +235,15 @@ func (r *hostGroupResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
+	group, err := r.findHostGroup(ctx, currentName, currentID)
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to read host group", err.Error())
+		return
+	}
+	if group.Name != "" {
+		currentName = group.Name
+	}
+
 	if currentName != desiredName {
 		if _, err := r.client.Execute(ctx, "set", "host-group", "name", desiredName, currentName); err != nil {
 			resp.Diagnostics.AddError("Unable to rename host group", err.Error())
@@ -238,7 +252,7 @@ func (r *hostGroupResource) Update(ctx context.Context, req resource.UpdateReque
 		currentName = desiredName
 	}
 
-	group, err := r.findHostGroup(ctx, currentName)
+	group, err = r.findHostGroup(ctx, currentName, currentID)
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to read host group", err.Error())
 		return
@@ -251,7 +265,7 @@ func (r *hostGroupResource) Update(ctx context.Context, req resource.UpdateReque
 			resp.Diagnostics.AddError("Unable to add host group members", err.Error())
 			return
 		}
-		group, err = r.findHostGroup(ctx, currentName)
+		group, err = r.findHostGroup(ctx, currentName, currentID)
 		if err != nil {
 			resp.Diagnostics.AddError("Unable to read host group after update", err.Error())
 			return
@@ -274,7 +288,7 @@ func (r *hostGroupResource) Update(ctx context.Context, req resource.UpdateReque
 		}
 	}
 
-	group, err = r.findHostGroup(ctx, currentName)
+	group, err = r.findHostGroup(ctx, currentName, currentID)
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to read host group after update", err.Error())
 		return
@@ -310,6 +324,17 @@ func (r *hostGroupResource) Delete(ctx context.Context, req resource.DeleteReque
 
 	name := strings.TrimSpace(state.Name.ValueString())
 	if name == "" {
+		id := strings.TrimSpace(state.ID.ValueString())
+		if id != "" {
+			group, err := r.findHostGroup(ctx, "", id)
+			if err != nil {
+				resp.Diagnostics.AddError("Invalid state", "name is required for deletion")
+				return
+			}
+			name = strings.TrimSpace(group.Name)
+		}
+	}
+	if name == "" {
 		resp.Diagnostics.AddError("Invalid state", "name is required for deletion")
 		return
 	}
@@ -326,7 +351,45 @@ func (r *hostGroupResource) ImportState(ctx context.Context, req resource.Import
 
 var errHostGroupNotFound = errors.New("host group not found")
 
-func (r *hostGroupResource) findHostGroup(ctx context.Context, name string) (*msa.HostGroup, error) {
+func (r *hostGroupResource) findHostGroup(ctx context.Context, name, id string) (*msa.HostGroup, error) {
+	if id != "" {
+		group, err := r.findHostGroupByID(ctx, id)
+		if err == nil {
+			return group, nil
+		}
+		if !errors.Is(err, errHostGroupNotFound) {
+			return nil, err
+		}
+	}
+	if name == "" {
+		return nil, errHostGroupNotFound
+	}
+	return r.findHostGroupByName(ctx, name)
+}
+
+func (r *hostGroupResource) findHostGroupByID(ctx context.Context, id string) (*msa.HostGroup, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, errHostGroupNotFound
+	}
+	response, err := r.client.Execute(ctx, "show", "host-groups")
+	if err != nil {
+		return nil, err
+	}
+	groups := msa.HostGroupsFromResponse(response)
+	for _, group := range groups {
+		if strings.EqualFold(group.SerialNumber, id) || strings.EqualFold(group.DurableID, id) {
+			return &group, nil
+		}
+	}
+	return nil, errHostGroupNotFound
+}
+
+func (r *hostGroupResource) findHostGroupByName(ctx context.Context, name string) (*msa.HostGroup, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errHostGroupNotFound
+	}
 	response, err := r.client.Execute(ctx, "show", "host-groups")
 	if err != nil {
 		return nil, err
@@ -334,7 +397,7 @@ func (r *hostGroupResource) findHostGroup(ctx context.Context, name string) (*ms
 
 	groups := msa.HostGroupsFromResponse(response)
 	for _, group := range groups {
-		if strings.EqualFold(group.Name, name) {
+		if strings.TrimSpace(group.Name) == name {
 			return &group, nil
 		}
 	}
@@ -345,7 +408,7 @@ func (r *hostGroupResource) findHostGroup(ctx context.Context, name string) (*ms
 func (r *hostGroupResource) waitForHostGroup(ctx context.Context, name string) (*msa.HostGroup, error) {
 	waits := []time.Duration{1 * time.Second, 2 * time.Second, 3 * time.Second}
 	for i, wait := range waits {
-		group, err := r.findHostGroup(ctx, name)
+		group, err := r.findHostGroupByName(ctx, name)
 		if err == nil {
 			return group, nil
 		}

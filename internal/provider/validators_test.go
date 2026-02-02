@@ -114,3 +114,31 @@ func TestHostGroupNameValidator(t *testing.T) {
 		}
 	}
 }
+
+func TestHostNamesSetValidator(t *testing.T) {
+	v := hostNamesSetValidator{}
+
+	valid := []string{"HostA", "HostB"}
+	setValue, diag := types.SetValueFrom(context.Background(), types.StringType, valid)
+	if diag.HasError() {
+		t.Fatalf("unexpected diagnostics building set: %v", diag)
+	}
+	req := validator.SetRequest{ConfigValue: setValue}
+	resp := &validator.SetResponse{}
+	v.ValidateSet(context.Background(), req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("unexpected diagnostics for valid hosts: %v", resp.Diagnostics)
+	}
+
+	invalid := []string{"HostA", "   "}
+	setValue, diag = types.SetValueFrom(context.Background(), types.StringType, invalid)
+	if diag.HasError() {
+		t.Fatalf("unexpected diagnostics building set: %v", diag)
+	}
+	req = validator.SetRequest{ConfigValue: setValue}
+	resp = &validator.SetResponse{}
+	v.ValidateSet(context.Background(), req, resp)
+	if !resp.Diagnostics.HasError() {
+		t.Fatalf("expected diagnostics for invalid hosts")
+	}
+}
