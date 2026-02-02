@@ -30,6 +30,7 @@ type volumeDataSourceModel struct {
 	SerialNumber types.String `tfsdk:"serial_number"`
 	DurableID    types.String `tfsdk:"durable_id"`
 	WWID         types.String `tfsdk:"wwid"`
+	SCSIWWN      types.String `tfsdk:"scsi_wwn"`
 	Pool         types.String `tfsdk:"pool"`
 	VDisk        types.String `tfsdk:"vdisk"`
 	Size         types.String `tfsdk:"size"`
@@ -65,6 +66,10 @@ func (d *volumeDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 			},
 			"wwid": schema.StringAttribute{
 				Description: "WWID derived from the array (serial number).",
+				Computed:    true,
+			},
+			"scsi_wwn": schema.StringAttribute{
+				Description: "Host-visible SCSI WWN/NAA identifier reported by the array.",
 				Computed:    true,
 			},
 			"pool": schema.StringAttribute{
@@ -177,6 +182,11 @@ func (d *volumeDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	data.SerialNumber = types.StringValue(volume.SerialNumber)
 	data.DurableID = types.StringValue(volume.DurableID)
 	data.WWID = types.StringValue(volume.SerialNumber)
+	if volume.WWN != "" {
+		data.SCSIWWN = types.StringValue(volume.WWN)
+	} else {
+		data.SCSIWWN = types.StringNull()
+	}
 	data.Pool = types.StringValue(volume.PoolName)
 	data.VDisk = types.StringValue(volume.VDiskName)
 	data.Size = types.StringValue(volume.Size)
