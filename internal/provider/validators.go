@@ -10,6 +10,7 @@ import (
 type initiatorIDValidator struct{}
 
 const maxHostNameLength = 255
+const maxHostGroupNameBytes = 32
 
 func (v initiatorIDValidator) Description(_ context.Context) string {
 	return "Initiator ID must be a WWPN (hex, with or without separators) or an iSCSI name (iqn., eui., naa.)."
@@ -187,6 +188,92 @@ func (v hostNameValidator) ValidateString(_ context.Context, req validator.Strin
 			req.Path,
 			"Invalid host_name",
 			"host_name must be 255 characters or fewer.",
+		)
+	}
+}
+
+type hostNamesSetValidator struct{}
+
+func (v hostNamesSetValidator) Description(_ context.Context) string {
+	return "Host names must be non-empty after trimming whitespace and 255 characters or fewer."
+}
+
+func (v hostNamesSetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v hostNamesSetValidator) ValidateSet(ctx context.Context, req validator.SetRequest, resp *validator.SetResponse) {
+	if req.ConfigValue.IsUnknown() || req.ConfigValue.IsNull() {
+		return
+	}
+
+	var items []string
+	diags := req.ConfigValue.ElementsAs(ctx, &items, false)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			resp.Diagnostics.AddAttributeError(
+				req.Path,
+				"Invalid hosts",
+				"host names must be non-empty after trimming whitespace.",
+			)
+			return
+		}
+		if len([]rune(trimmed)) > maxHostNameLength {
+			resp.Diagnostics.AddAttributeError(
+				req.Path,
+				"Invalid hosts",
+				"host names must be 255 characters or fewer.",
+			)
+			return
+		}
+	}
+}
+
+type hostGroupNameValidator struct{}
+
+func (v hostGroupNameValidator) Description(_ context.Context) string {
+	return "Host group name must be 1-32 bytes after trimming whitespace and must not include \", . < or \\."
+}
+
+func (v hostGroupNameValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v hostGroupNameValidator) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsUnknown() || req.ConfigValue.IsNull() {
+		return
+	}
+
+	trimmed := strings.TrimSpace(req.ConfigValue.ValueString())
+	if trimmed == "" {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid host group name",
+			"host group name must be non-empty after trimming whitespace.",
+		)
+		return
+	}
+
+	if len([]byte(trimmed)) > maxHostGroupNameBytes {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid host group name",
+			"host group name must be 32 bytes or fewer.",
+		)
+		return
+	}
+
+	if strings.ContainsAny(trimmed, "\",.<\\\\") {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid host group name",
+			"host group name cannot include \", . < or \\.",
 		)
 	}
 }
