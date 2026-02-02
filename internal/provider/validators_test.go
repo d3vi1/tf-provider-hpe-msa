@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -56,5 +57,25 @@ func TestInitiatorIDValidatorRejectsEmpty(t *testing.T) {
 	v.ValidateString(context.Background(), req, resp)
 	if !resp.Diagnostics.HasError() {
 		t.Fatalf("expected diagnostics for empty initiator_id")
+	}
+}
+
+func TestHostNameValidatorLength(t *testing.T) {
+	v := hostNameValidator{}
+
+	valid := strings.Repeat("h", maxHostNameLength)
+	req := validator.StringRequest{ConfigValue: types.StringValue(valid)}
+	resp := &validator.StringResponse{}
+	v.ValidateString(context.Background(), req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("unexpected diagnostics for valid host_name: %v", resp.Diagnostics)
+	}
+
+	invalid := strings.Repeat("h", maxHostNameLength+1)
+	req = validator.StringRequest{ConfigValue: types.StringValue(invalid)}
+	resp = &validator.StringResponse{}
+	v.ValidateString(context.Background(), req, resp)
+	if !resp.Diagnostics.HasError() {
+		t.Fatalf("expected diagnostics for oversized host_name")
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -57,6 +58,9 @@ func (r *hostResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			"name": schema.StringAttribute{
 				Description: "Host name.",
 				Required:    true,
+				Validators: []validator.String{
+					hostNameValidator{},
+				},
 			},
 			"initiators": schema.SetAttribute{
 				Description: "Initiator IDs or nicknames to seed the host (comma-free values).",

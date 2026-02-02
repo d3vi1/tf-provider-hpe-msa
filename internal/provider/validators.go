@@ -9,6 +9,8 @@ import (
 
 type initiatorIDValidator struct{}
 
+const maxHostNameLength = 255
+
 func (v initiatorIDValidator) Description(_ context.Context) string {
 	return "Initiator ID must be a WWPN (hex, with or without separators) or an iSCSI name (iqn., eui., naa.)."
 }
@@ -153,4 +155,38 @@ func isHostnameLike(value string) bool {
 		return false
 	}
 	return true
+}
+
+type hostNameValidator struct{}
+
+func (v hostNameValidator) Description(_ context.Context) string {
+	return "Host name must be 1-255 characters after trimming whitespace."
+}
+
+func (v hostNameValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v hostNameValidator) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsUnknown() || req.ConfigValue.IsNull() {
+		return
+	}
+
+	trimmed := strings.TrimSpace(req.ConfigValue.ValueString())
+	if trimmed == "" {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid host_name",
+			"host_name must be non-empty after trimming whitespace.",
+		)
+		return
+	}
+
+	if len([]rune(trimmed)) > maxHostNameLength {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid host_name",
+			"host_name must be 255 characters or fewer.",
+		)
+	}
 }
