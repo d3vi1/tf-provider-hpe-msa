@@ -1,5 +1,7 @@
 package msa
 
+import "strings"
+
 type Mapping struct {
 	Volume       string
 	VolumeSerial string
@@ -17,7 +19,9 @@ func MappingsFromResponse(response Response) []Mapping {
 		if volume == "" {
 			continue
 		}
-		if props["lun"] == "" {
+		access := strings.ToLower(strings.TrimSpace(props["access"]))
+		lun := strings.TrimSpace(props["lun"])
+		if lun == "" && access != "no-access" {
 			continue
 		}
 

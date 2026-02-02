@@ -11,6 +11,11 @@
       <PROPERTY name="access" type="string">read-write</PROPERTY>
       <PROPERTY name="ports" type="string">1,2</PROPERTY>
     </OBJECT>
+    <OBJECT basetype="host-view-mappings" name="volume-view" oid="3" format="rows">
+      <PROPERTY name="volume" type="string">volB</PROPERTY>
+      <PROPERTY name="volume-serial" type="string">00c0ff3cab9c00000000000003010000</PROPERTY>
+      <PROPERTY name="access" type="string">no-access</PROPERTY>
+    </OBJECT>
   </OBJECT>
   <OBJECT basetype="status" name="status" oid="3">
     <PROPERTY name="response-type" type="string">Success</PROPERTY>

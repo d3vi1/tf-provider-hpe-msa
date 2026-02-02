@@ -175,6 +175,7 @@ func (r *volumeMappingResource) Create(ctx context.Context, req resource.CreateR
 	if lun != "" {
 		parts = append(parts, "lun", lun)
 	}
+	// MSA maps hosts and host groups through the initiator parameter using host.* or hostgroup.*.* syntax.
 	parts = append(parts, "initiator", targetSpec, volume)
 
 	_, err := r.client.Execute(ctx, parts...)
