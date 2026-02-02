@@ -37,6 +37,7 @@ type cloneResourceModel struct {
 	DurableID       types.String `tfsdk:"durable_id"`
 	SerialNumber    types.String `tfsdk:"serial_number"`
 	WWID            types.String `tfsdk:"wwid"`
+	SCSIWWN         types.String `tfsdk:"scsi_wwn"`
 	AllowDestroy    types.Bool   `tfsdk:"allow_destroy"`
 }
 
@@ -92,6 +93,10 @@ func (r *cloneResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"wwid": schema.StringAttribute{
 				Description: "WWID derived from the array (serial number).",
+				Computed:    true,
+			},
+			"scsi_wwn": schema.StringAttribute{
+				Description: "Host-visible SCSI WWN/NAA identifier reported by the array.",
 				Computed:    true,
 			},
 			"allow_destroy": schema.BoolAttribute{
@@ -354,6 +359,11 @@ func cloneStateFromModel(model cloneResourceModel, volume *msa.Volume) cloneReso
 		state.SerialNumber = types.StringValue(volume.SerialNumber)
 		state.ID = types.StringValue(volume.SerialNumber)
 		state.WWID = types.StringValue(volume.SerialNumber)
+	}
+	if volume.WWN != "" {
+		state.SCSIWWN = types.StringValue(volume.WWN)
+	} else {
+		state.SCSIWWN = types.StringNull()
 	}
 
 	return state
