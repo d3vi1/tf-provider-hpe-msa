@@ -142,3 +142,19 @@ func TestHostNamesSetValidator(t *testing.T) {
 		t.Fatalf("expected diagnostics for invalid hosts")
 	}
 }
+
+func TestValidateHostGroupNameValue(t *testing.T) {
+	valid := []string{"GroupA", "Group 1"}
+	for _, value := range valid {
+		if err := validateHostGroupNameValue(value); err != nil {
+			t.Fatalf("unexpected error for valid host group name %q: %v", value, err)
+		}
+	}
+
+	invalid := []string{"", "bad,name", "bad.name", "bad<name"}
+	for _, value := range invalid {
+		if err := validateHostGroupNameValue(value); err == nil {
+			t.Fatalf("expected error for invalid host group name %q", value)
+		}
+	}
+}
