@@ -1,6 +1,12 @@
 package provider
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/d3vi1/tf-provider-hpe-msa/internal/msa"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
 
 func TestBuildTargetSpec(t *testing.T) {
 	type testCase struct {
@@ -41,6 +47,76 @@ func TestNormalizeAccess(t *testing.T) {
 			t.Fatalf("unexpected diagnostics for %q: %v", input, diags)
 		}
 		if value != expected {
+			t.Fatalf("expected %q, got %q", expected, value)
+		}
+	}
+}
+
+func TestMappingStatePortsNullWhenUnconfigured(t *testing.T) {
+	ctx := context.Background()
+	model := volumeMappingResourceModel{
+		Ports: types.SetNull(types.StringType),
+	}
+	mapping := &msa.Mapping{
+		Volume: "vol1",
+		Access: "read-write",
+		LUN:    "1",
+		Ports:  "1,2,3",
+	}
+
+	state, diags := mappingStateFromModel(ctx, model, mapping)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if !state.Ports.IsNull() {
+		t.Fatalf("expected ports to be null when not configured")
+	}
+}
+
+func TestMappingStatePortsFromAPIWhenConfigured(t *testing.T) {
+	ctx := context.Background()
+	setValue, diag := types.SetValueFrom(ctx, types.StringType, []string{"1", "2"})
+	if diag.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diag)
+	}
+	model := volumeMappingResourceModel{
+		Ports: setValue,
+	}
+	mapping := &msa.Mapping{
+		Volume: "vol1",
+		Access: "read-write",
+		LUN:    "1",
+		Ports:  "1,2,3",
+	}
+
+	state, diags := mappingStateFromModel(ctx, model, mapping)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if state.Ports.IsNull() {
+		t.Fatalf("expected ports to be set when configured")
+	}
+	var ports []string
+	diags = state.Ports.ElementsAs(ctx, &ports, false)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics reading ports: %v", diags)
+	}
+	if len(ports) != 3 {
+		t.Fatalf("expected 3 ports from API, got %d", len(ports))
+	}
+}
+
+func TestCanonicalAccess(t *testing.T) {
+	cases := map[string]string{
+		"rw":         "read-write",
+		"Read-Write": "read-write",
+		"ro":         "read-only",
+		"read-only":  "read-only",
+		"no-access":  "no-access",
+	}
+
+	for input, expected := range cases {
+		if value := canonicalAccess(input); value != expected {
 			t.Fatalf("expected %q, got %q", expected, value)
 		}
 	}

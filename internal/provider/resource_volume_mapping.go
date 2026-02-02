@@ -383,32 +383,40 @@ func mappingStateFromModel(ctx context.Context, model volumeMappingResourceModel
 
 	state.VolumeName = types.StringValue(mapping.Volume)
 	if mapping.Access != "" {
-		state.Access = types.StringValue(mapping.Access)
+		state.Access = types.StringValue(canonicalAccess(mapping.Access))
+	} else if !model.Access.IsNull() && !model.Access.IsUnknown() && strings.TrimSpace(model.Access.ValueString()) != "" {
+		state.Access = types.StringValue(strings.TrimSpace(model.Access.ValueString()))
 	} else {
 		state.Access = types.StringNull()
 	}
 	if mapping.LUN != "" {
 		state.LUN = types.StringValue(mapping.LUN)
+	} else if !model.LUN.IsNull() && !model.LUN.IsUnknown() && strings.TrimSpace(model.LUN.ValueString()) != "" {
+		state.LUN = types.StringValue(strings.TrimSpace(model.LUN.ValueString()))
 	} else {
 		state.LUN = types.StringNull()
 	}
 
-	ports := strings.TrimSpace(mapping.Ports)
-	if ports != "" {
-		portItems := strings.Split(ports, ",")
-		cleaned := make([]string, 0, len(portItems))
-		for _, item := range portItems {
-			item = strings.TrimSpace(item)
-			if item != "" {
-				cleaned = append(cleaned, item)
+	if !model.Ports.IsNull() && !model.Ports.IsUnknown() {
+		ports := strings.TrimSpace(mapping.Ports)
+		if ports != "" {
+			portItems := strings.Split(ports, ",")
+			cleaned := make([]string, 0, len(portItems))
+			for _, item := range portItems {
+				item = strings.TrimSpace(item)
+				if item != "" {
+					cleaned = append(cleaned, item)
+				}
 			}
+			setValue, diag := types.SetValueFrom(ctx, types.StringType, cleaned)
+			if diag.HasError() {
+				diags.Append(diag...)
+				return state, diags
+			}
+			state.Ports = setValue
+		} else {
+			state.Ports = types.SetNull(types.StringType)
 		}
-		setValue, diag := types.SetValueFrom(ctx, types.StringType, cleaned)
-		if diag.HasError() {
-			diags.Append(diag...)
-			return state, diags
-		}
-		state.Ports = setValue
 	} else {
 		state.Ports = types.SetNull(types.StringType)
 	}
@@ -421,6 +429,20 @@ func mappingStateFromModel(ctx context.Context, model volumeMappingResourceModel
 	state.Properties = propsValue
 
 	return state, diags
+}
+
+func canonicalAccess(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	switch value {
+	case "rw", "read-write":
+		return "read-write"
+	case "ro", "read-only":
+		return "read-only"
+	case "no-access":
+		return "no-access"
+	default:
+		return strings.TrimSpace(value)
+	}
 }
 
 func mappingID(volume, targetSpec string) string {
