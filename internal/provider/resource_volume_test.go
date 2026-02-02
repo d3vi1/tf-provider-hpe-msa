@@ -138,6 +138,10 @@ func TestPoolNamesFromResponse(t *testing.T) {
 			},
 			{
 				BaseType: "pools",
+				Name:     "pools",
+			},
+			{
+				BaseType: "pools",
 				Name:     "poolB",
 				Properties: []msa.Property{
 					{Name: "name", Value: "poolB"},

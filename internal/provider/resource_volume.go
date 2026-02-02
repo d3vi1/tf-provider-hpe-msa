@@ -42,6 +42,11 @@ type volumeResourceModel struct {
 	AllowDestroy types.Bool   `tfsdk:"allow_destroy"`
 }
 
+type volumeTargetConfig struct {
+	Pool  types.String `tfsdk:"pool"`
+	VDisk types.String `tfsdk:"vdisk"`
+}
+
 func (r *volumeResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_msa_volume"
 }
@@ -126,6 +131,12 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
+	var config volumeTargetConfig
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	if r.client == nil {
 		resp.Diagnostics.AddError("Provider not configured", "Missing MSA client")
 		return
@@ -147,8 +158,16 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 				return
 			}
 		} else if errors.Is(err, errVolumeTargetUnknown) {
-			resp.Diagnostics.AddError("Pool/vdisk unknown", "pool or vdisk must be known during planning to create a volume")
-			return
+			if config.Pool.IsNull() && config.VDisk.IsNull() {
+				target, err = r.defaultPool(ctx)
+				if err != nil {
+					resp.Diagnostics.AddError("Missing pool or vdisk", err.Error())
+					return
+				}
+			} else {
+				resp.Diagnostics.AddError("Pool/vdisk unknown", "pool or vdisk must be known during planning to create a volume")
+				return
+			}
 		} else {
 			resp.Diagnostics.AddError("Invalid configuration", err.Error())
 			return
@@ -387,6 +406,9 @@ func poolNamesFromResponse(response msa.Response) []string {
 			}
 		}
 		props := obj.PropertyMap()
+		if obj.Name == "pools" && props["pool-name"] == "" && props["serial-number"] == "" {
+			continue
+		}
 		name := firstNonEmpty(props["pool-name"], props["name"], obj.Name)
 		if name == "" {
 			continue
