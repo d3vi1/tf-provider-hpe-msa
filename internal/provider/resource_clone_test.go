@@ -3,6 +3,7 @@ package provider
 import (
 	"testing"
 
+	"github.com/d3vi1/tf-provider-hpe-msa/internal/msa"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -38,5 +39,25 @@ func TestResolveCloneSnapshot(t *testing.T) {
 				t.Fatalf("expected %q, got %q", tc.expectValue, value)
 			}
 		})
+	}
+}
+
+func TestCloneStateFromModelSCSIWWN(t *testing.T) {
+	model := cloneResourceModel{}
+	volume := &msa.Volume{
+		Name:         "clone01",
+		SerialNumber: "SNCLONE1",
+		WWN:          "600c0ff0000000000000000000000002",
+	}
+
+	state := cloneStateFromModel(model, volume)
+	if state.SCSIWWN.IsNull() || state.SCSIWWN.ValueString() != volume.WWN {
+		t.Fatalf("expected scsi_wwn to be set from volume wwn")
+	}
+
+	volume.WWN = ""
+	state = cloneStateFromModel(model, volume)
+	if !state.SCSIWWN.IsNull() {
+		t.Fatalf("expected scsi_wwn to be null when wwn missing")
 	}
 }

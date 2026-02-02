@@ -104,6 +104,8 @@ resource "hpe_msa_clone" "example" {
 }
 ```
 
+The clone resource also exposes `scsi_wwn`, which surfaces the host-visible SCSI/NAA identifier reported by the array.
+
 Import by serial number:
 
 ```bash
