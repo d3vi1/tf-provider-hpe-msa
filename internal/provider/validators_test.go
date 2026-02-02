@@ -32,6 +32,8 @@ func TestIsValidInitiatorID(t *testing.T) {
 		"NOTAWWPN",
 		"50:06:01:60:3b:ad:be",
 		"50:06:01:60:3b:ad:be:eg",
+		"50:06:01:60:3b:ad:be:ef:00",
+		"500601603badbeeg",
 		"iqn.",
 		"iqn.x",
 		"iqn.1993-08:missingdomain",
@@ -40,6 +42,8 @@ func TestIsValidInitiatorID(t *testing.T) {
 		"eui.zz",
 		"iqn.1993-08.org.debian:01: a",
 		"naa.foo",
+		"naa.5006",
+		"naa.50060160A3B3BEEFZZ",
 	}
 	for _, value := range invalid {
 		if isValidInitiatorID(value) {

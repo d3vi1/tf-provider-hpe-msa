@@ -59,6 +59,13 @@ func TestNormalizeAccess(t *testing.T) {
 	}
 }
 
+func TestNormalizeAccessInvalid(t *testing.T) {
+	_, diags := normalizeAccess(stringValueOrNull("write-only"))
+	if !diags.HasError() {
+		t.Fatalf("expected diagnostics for invalid access")
+	}
+}
+
 func TestMappingStatePortsNullWhenUnconfigured(t *testing.T) {
 	ctx := context.Background()
 	model := volumeMappingResourceModel{

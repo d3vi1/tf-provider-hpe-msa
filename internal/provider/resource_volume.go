@@ -539,11 +539,22 @@ func parseSizeToBytes(raw string) (int64, error) {
 	}
 
 	if multiplier, ok := decimalUnits[unit]; ok {
-		return int64(value*multiplier + 0.5), nil
+		return sizeToBytes(value, multiplier, raw)
 	}
 	if multiplier, ok := binaryUnits[unit]; ok {
-		return int64(value*multiplier + 0.5), nil
+		return sizeToBytes(value, multiplier, raw)
 	}
 
 	return 0, fmt.Errorf("invalid size unit %q", unit)
+}
+
+func sizeToBytes(value, multiplier float64, raw string) (int64, error) {
+	result := value * multiplier
+	if math.IsNaN(result) || math.IsInf(result, 0) || result > float64(math.MaxInt64) {
+		return 0, fmt.Errorf("invalid size %q", raw)
+	}
+	if result <= 0 {
+		return 0, fmt.Errorf("invalid size %q", raw)
+	}
+	return int64(result + 0.5), nil
 }
