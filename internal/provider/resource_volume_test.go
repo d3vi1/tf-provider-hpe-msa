@@ -78,8 +78,15 @@ func TestParseSizeToBytes(t *testing.T) {
 		{name: "gb", input: "1GB", want: 1_000_000_000},
 		{name: "gib", input: "1GiB", want: 1_073_741_824},
 		{name: "float", input: "2.5TB", want: 2_500_000_000_000},
+		{name: "lowercase", input: "1gib", want: 1_073_741_824},
+		{name: "space", input: "1 GB", want: 1_000_000_000},
+		{name: "trim", input: " 1GB ", want: 1_000_000_000},
 		{name: "invalid", input: "abc", wantErr: true},
 		{name: "missing-unit", input: "100", wantErr: true},
+		{name: "negative", input: "-1GB", wantErr: true},
+		{name: "zero", input: "0GB", wantErr: true},
+		{name: "malformed", input: "1..2GB", wantErr: true},
+		{name: "invalid-unit", input: "1GBB", wantErr: true},
 	}
 
 	for _, tc := range testCases {
@@ -98,6 +105,22 @@ func TestParseSizeToBytes(t *testing.T) {
 				t.Fatalf("expected %d, got %d", tc.want, value)
 			}
 		})
+	}
+}
+
+func TestParseSizeToBytesStressInputs(t *testing.T) {
+	inputs := []string{
+		"1GB", "1GiB", "1gib", "1 G", "1 gB", "1G B",
+		"1.000GB", "1.5GiB", "9999999TB",
+		"", " ", "1", "1e3GB", "1_000GB", "GB",
+		"1.2.3GB", "1GB ", " 1GB", "\t2TB",
+	}
+
+	for _, input := range inputs {
+		value, err := parseSizeToBytes(input)
+		if err == nil && value <= 0 {
+			t.Fatalf("expected positive value for %q, got %d", input, value)
+		}
 	}
 }
 
