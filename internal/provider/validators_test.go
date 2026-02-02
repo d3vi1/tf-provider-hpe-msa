@@ -79,3 +79,38 @@ func TestHostNameValidatorLength(t *testing.T) {
 		t.Fatalf("expected diagnostics for oversized host_name")
 	}
 }
+
+func TestHostGroupNameValidator(t *testing.T) {
+	v := hostGroupNameValidator{}
+
+	valid := []string{
+		"GroupA",
+		"Group 1",
+		strings.Repeat("g", maxHostGroupNameBytes),
+	}
+	for _, value := range valid {
+		req := validator.StringRequest{ConfigValue: types.StringValue(value)}
+		resp := &validator.StringResponse{}
+		v.ValidateString(context.Background(), req, resp)
+		if resp.Diagnostics.HasError() {
+			t.Fatalf("unexpected diagnostics for valid host group name %q: %v", value, resp.Diagnostics)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"bad,name",
+		"bad.name",
+		"bad<name",
+		`bad\\name`,
+		strings.Repeat("g", maxHostGroupNameBytes+1),
+	}
+	for _, value := range invalid {
+		req := validator.StringRequest{ConfigValue: types.StringValue(value)}
+		resp := &validator.StringResponse{}
+		v.ValidateString(context.Background(), req, resp)
+		if !resp.Diagnostics.HasError() {
+			t.Fatalf("expected diagnostics for invalid host group name %q", value)
+		}
+	}
+}
