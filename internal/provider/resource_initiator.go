@@ -236,7 +236,13 @@ func (r *initiatorResource) Delete(ctx context.Context, req resource.DeleteReque
 		return
 	}
 
-	initID := strings.TrimSpace(state.InitiatorID.ValueString())
+	initID := ""
+	if !state.ID.IsNull() && !state.ID.IsUnknown() {
+		initID = strings.TrimSpace(state.ID.ValueString())
+	}
+	if initID == "" {
+		initID = strings.TrimSpace(state.InitiatorID.ValueString())
+	}
 	if initID == "" {
 		resp.Diagnostics.AddError("Invalid state", "initiator_id is required for deletion")
 		return
@@ -289,12 +295,22 @@ func initiatorStateFromModel(ctx context.Context, model initiatorResourceModel, 
 	state := model
 	var diags diag.Diagnostics
 
-	state.InitiatorID = types.StringValue(initiator.ID)
-	state.ID = types.StringValue(initiator.ID)
-	if initiator.Nickname != "" {
+	if !model.InitiatorID.IsNull() && !model.InitiatorID.IsUnknown() && strings.TrimSpace(model.InitiatorID.ValueString()) != "" {
+		state.InitiatorID = types.StringValue(strings.TrimSpace(model.InitiatorID.ValueString()))
+	} else if initiator.ID != "" {
+		state.InitiatorID = types.StringValue(initiator.ID)
+	}
+	if initiator.ID != "" {
+		state.ID = types.StringValue(initiator.ID)
+	}
+	if !model.Nickname.IsNull() && !model.Nickname.IsUnknown() && strings.TrimSpace(model.Nickname.ValueString()) != "" {
+		state.Nickname = types.StringValue(strings.TrimSpace(model.Nickname.ValueString()))
+	} else if initiator.Nickname != "" {
 		state.Nickname = types.StringValue(initiator.Nickname)
 	}
-	if initiator.Profile != "" {
+	if !model.Profile.IsNull() && !model.Profile.IsUnknown() && strings.TrimSpace(model.Profile.ValueString()) != "" {
+		state.Profile = types.StringValue(strings.TrimSpace(model.Profile.ValueString()))
+	} else if initiator.Profile != "" {
 		state.Profile = types.StringValue(initiator.Profile)
 	}
 	if initiator.HostID != "" {
