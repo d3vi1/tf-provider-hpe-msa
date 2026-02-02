@@ -10,9 +10,27 @@ func (o Object) PropertyMap() map[string]string {
 	return props
 }
 
-func (r Response) ObjectsWithoutStatus() []Object {
+func (o Object) AllObjects() []Object {
+	objects := make([]Object, 0, len(o.Objects))
+	for _, obj := range o.Objects {
+		objects = append(objects, obj)
+		objects = append(objects, obj.AllObjects()...)
+	}
+	return objects
+}
+
+func (r Response) AllObjects() []Object {
 	objects := make([]Object, 0, len(r.Objects))
 	for _, obj := range r.Objects {
+		objects = append(objects, obj)
+		objects = append(objects, obj.AllObjects()...)
+	}
+	return objects
+}
+
+func (r Response) ObjectsWithoutStatus() []Object {
+	objects := make([]Object, 0, len(r.Objects))
+	for _, obj := range r.AllObjects() {
 		if obj.BaseType == "status" || obj.Name == "status" {
 			continue
 		}

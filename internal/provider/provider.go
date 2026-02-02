@@ -115,6 +115,9 @@ func (p *msaProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewVolumeResource,
 		NewSnapshotResource,
+		NewInitiatorResource,
+		NewHostResource,
+		NewHostInitiatorResource,
 	}
 }
 

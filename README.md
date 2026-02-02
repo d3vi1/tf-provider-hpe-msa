@@ -4,7 +4,7 @@ Production-quality Terraform provider for HPE MSA 2050 arrays (firmware VL270P00
 
 ## Status
 
-Milestone 0: bootstrap, CI, skeleton provider, and XML client scaffolding with mocks. Resources and data sources will be implemented in subsequent milestones.
+Implemented resources: volumes, snapshots, initiators, hosts, and host initiator membership. Pending: clones, mappings, acceptance tests, and hardening.
 
 ## Requirements
 
@@ -80,6 +80,55 @@ Import by serial number:
 
 ```bash
 terraform import hpe_msa_snapshot.example SERIAL-NUMBER
+```
+
+### Initiator + Host
+
+```hcl
+resource "hpe_msa_initiator" "init1" {
+  initiator_id = "20000000000000c1"
+  nickname     = "tf-init-01"
+  allow_destroy = false
+}
+
+resource "hpe_msa_host" "host1" {
+  name        = "tf-host-01"
+  initiators  = [hpe_msa_initiator.init1.initiator_id]
+  allow_destroy = false
+}
+```
+
+Import by initiator ID:
+
+```bash
+terraform import hpe_msa_initiator.init1 20000000000000c1
+```
+
+Import by host name:
+
+```bash
+terraform import hpe_msa_host.host1 tf-host-01
+```
+
+### Host membership
+
+```hcl
+resource "hpe_msa_initiator" "init2" {
+  initiator_id = "20000000000000c2"
+  nickname     = "tf-init-02"
+  allow_destroy = false
+}
+
+resource "hpe_msa_host_initiator" "member" {
+  host_name    = hpe_msa_host.host1.name
+  initiator_id = hpe_msa_initiator.init2.initiator_id
+}
+```
+
+Import by host and initiator ID:
+
+```bash
+terraform import hpe_msa_host_initiator.member tf-host-01:20000000000000c2
 ```
 
 ## Data sources
