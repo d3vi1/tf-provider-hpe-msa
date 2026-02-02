@@ -42,6 +42,11 @@ type volumeResourceModel struct {
 	AllowDestroy types.Bool   `tfsdk:"allow_destroy"`
 }
 
+type volumeTargetConfig struct {
+	Pool  types.String `tfsdk:"pool"`
+	VDisk types.String `tfsdk:"vdisk"`
+}
+
 func (r *volumeResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_msa_volume"
 }
@@ -126,6 +131,12 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
+	var config volumeTargetConfig
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	if r.client == nil {
 		resp.Diagnostics.AddError("Provider not configured", "Missing MSA client")
 		return
@@ -140,8 +151,27 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	target, err := resolveVolumeTarget(plan)
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid configuration", err.Error())
-		return
+		if errors.Is(err, errVolumeTargetMissing) {
+			target, err = r.defaultPool(ctx)
+			if err != nil {
+				resp.Diagnostics.AddError("Missing pool or vdisk", err.Error())
+				return
+			}
+		} else if errors.Is(err, errVolumeTargetUnknown) {
+			if config.Pool.IsNull() && config.VDisk.IsNull() {
+				target, err = r.defaultPool(ctx)
+				if err != nil {
+					resp.Diagnostics.AddError("Missing pool or vdisk", err.Error())
+					return
+				}
+			} else {
+				resp.Diagnostics.AddError("Pool/vdisk unknown", "pool or vdisk must be known during planning to create a volume")
+				return
+			}
+		} else {
+			resp.Diagnostics.AddError("Invalid configuration", err.Error())
+			return
+		}
 	}
 
 	_, err = r.findVolume(ctx, name, "")
@@ -280,6 +310,9 @@ func (r *volumeResource) ImportState(ctx context.Context, req resource.ImportSta
 }
 
 var errVolumeNotFound = errors.New("volume not found")
+var errVolumeTargetMissing = errors.New("volume target missing")
+var errVolumeTargetConflict = errors.New("volume target conflict")
+var errVolumeTargetUnknown = errors.New("volume target unknown")
 
 func (r *volumeResource) findVolume(ctx context.Context, name, id string) (*msa.Volume, error) {
 	response, err := r.client.Execute(ctx, "show", "volumes")
@@ -325,19 +358,69 @@ func (r *volumeResource) waitForVolume(ctx context.Context, name, id string) (*m
 }
 
 func resolveVolumeTarget(plan volumeResourceModel) (string, error) {
-	pool := strings.TrimSpace(plan.Pool.ValueString())
-	vdisk := strings.TrimSpace(plan.VDisk.ValueString())
+	poolValue := strings.TrimSpace(plan.Pool.ValueString())
+	vdiskValue := strings.TrimSpace(plan.VDisk.ValueString())
+
+	poolKnown := !plan.Pool.IsUnknown() && poolValue != ""
+	vdiskKnown := !plan.VDisk.IsUnknown() && vdiskValue != ""
 
 	switch {
-	case pool != "" && vdisk != "":
-		return "", fmt.Errorf("only one of pool or vdisk can be set")
-	case pool == "" && vdisk == "":
-		return "", fmt.Errorf("either pool or vdisk must be set")
-	case pool != "":
-		return pool, nil
+	case poolKnown && vdiskKnown:
+		return "", errVolumeTargetConflict
+	case poolKnown:
+		return poolValue, nil
+	case vdiskKnown:
+		return vdiskValue, nil
+	case plan.Pool.IsUnknown() || plan.VDisk.IsUnknown():
+		return "", errVolumeTargetUnknown
+	case poolValue == "" && vdiskValue == "":
+		return "", errVolumeTargetMissing
 	default:
-		return vdisk, nil
+		return "", errVolumeTargetMissing
 	}
+}
+
+func (r *volumeResource) defaultPool(ctx context.Context) (string, error) {
+	response, err := r.client.Execute(ctx, "show", "pools")
+	if err != nil {
+		return "", fmt.Errorf("unable to query pools: %w", err)
+	}
+
+	names := poolNamesFromResponse(response)
+	if len(names) == 1 {
+		return names[0], nil
+	}
+	if len(names) == 0 {
+		return "", errors.New("no pools were returned; set pool or vdisk explicitly")
+	}
+	return "", fmt.Errorf("multiple pools found; set pool or vdisk explicitly (%s)", strings.Join(names, ", "))
+}
+
+func poolNamesFromResponse(response msa.Response) []string {
+	names := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, obj := range response.ObjectsWithoutStatus() {
+		if obj.BaseType != "pools" && obj.BaseType != "pool" {
+			if _, ok := obj.PropertyValue("pool-name"); !ok {
+				continue
+			}
+		}
+		props := obj.PropertyMap()
+		if obj.Name == "pools" && props["pool-name"] == "" && props["serial-number"] == "" {
+			continue
+		}
+		name := firstNonEmpty(props["pool-name"], props["name"], obj.Name)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		names = append(names, name)
+	}
+	return names
 }
 
 func volumeStateFromModel(model volumeResourceModel, volume *msa.Volume) volumeResourceModel {

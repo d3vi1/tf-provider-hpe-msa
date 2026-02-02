@@ -10,28 +10,44 @@ import (
 
 func TestResolveVolumeTarget(t *testing.T) {
 	testCases := []struct {
-		name     string
-		pool     string
-		vdisk    string
-		expected string
-		wantErr  bool
+		name         string
+		pool         string
+		vdisk        string
+		poolUnknown  bool
+		vdiskUnknown bool
+		expected     string
+		wantErr      error
 	}{
 		{name: "pool", pool: "pool-a", expected: "pool-a"},
 		{name: "vdisk", vdisk: "A", expected: "A"},
-		{name: "both", pool: "pool-a", vdisk: "A", wantErr: true},
-		{name: "none", wantErr: true},
+		{name: "both", pool: "pool-a", vdisk: "A", wantErr: errVolumeTargetConflict},
+		{name: "none", wantErr: errVolumeTargetMissing},
+		{name: "pool-unknown", poolUnknown: true, wantErr: errVolumeTargetUnknown},
+		{name: "vdisk-unknown", vdiskUnknown: true, wantErr: errVolumeTargetUnknown},
+		{name: "vdisk-known-pool-unknown", vdisk: "A", poolUnknown: true, expected: "A"},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			model := volumeResourceModel{}
-			model.Pool = stringValueOrNull(tc.pool)
-			model.VDisk = stringValueOrNull(tc.vdisk)
+			if tc.poolUnknown {
+				model.Pool = types.StringUnknown()
+			} else {
+				model.Pool = stringValueOrNull(tc.pool)
+			}
+			if tc.vdiskUnknown {
+				model.VDisk = types.StringUnknown()
+			} else {
+				model.VDisk = stringValueOrNull(tc.vdisk)
+			}
 
 			value, err := resolveVolumeTarget(model)
-			if tc.wantErr {
+			if tc.wantErr != nil {
 				if err == nil {
 					t.Fatalf("expected error")
+				}
+				if err != tc.wantErr {
+					t.Fatalf("expected %v, got %v", tc.wantErr, err)
 				}
 				return
 			}
@@ -107,5 +123,52 @@ func TestVolumeSizeMatches(t *testing.T) {
 	}
 	if match {
 		t.Fatalf("expected mismatch outside tolerance")
+	}
+}
+
+func TestPoolNamesFromResponse(t *testing.T) {
+	response := msa.Response{
+		Objects: []msa.Object{
+			{
+				BaseType: "pools",
+				Name:     "poolA",
+				Properties: []msa.Property{
+					{Name: "pool-name", Value: "poolA"},
+				},
+			},
+			{
+				BaseType: "pools",
+				Name:     "pools",
+			},
+			{
+				BaseType: "pools",
+				Name:     "poolB",
+				Properties: []msa.Property{
+					{Name: "name", Value: "poolB"},
+				},
+			},
+			{
+				BaseType: "status",
+				Name:     "status",
+				Properties: []msa.Property{
+					{Name: "response-type", Value: "Success"},
+				},
+			},
+			{
+				BaseType: "tiers",
+				Name:     "tier1",
+				Properties: []msa.Property{
+					{Name: "name", Value: "tier1"},
+				},
+			},
+		},
+	}
+
+	names := poolNamesFromResponse(response)
+	if len(names) != 2 {
+		t.Fatalf("expected 2 pools, got %d", len(names))
+	}
+	if names[0] != "poolA" || names[1] != "poolB" {
+		t.Fatalf("unexpected pool names: %v", names)
 	}
 }
