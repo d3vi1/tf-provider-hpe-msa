@@ -10,6 +10,7 @@
     <PROPERTY name="volume-name" type="string">vol01</PROPERTY>
     <PROPERTY name="serial-number" type="string">SN123</PROPERTY>
     <PROPERTY name="durable-id" type="string">V1</PROPERTY>
+    <PROPERTY name="wwn" type="string">600c0ff0000000000000000000000001</PROPERTY>
     <PROPERTY name="storage-poolname" type="string">pool-a</PROPERTY>
     <PROPERTY name="virtual-diskname" type="string">pool-a</PROPERTY>
     <PROPERTY name="size" type="string">100 GB</PROPERTY>

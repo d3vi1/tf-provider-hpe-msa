@@ -6,6 +6,7 @@ type Volume struct {
 	Name         string
 	SerialNumber string
 	DurableID    string
+	WWN          string
 	PoolName     string
 	VDiskName    string
 	Size         string
@@ -39,6 +40,7 @@ func volumeFromObject(obj Object) Volume {
 		Name:         firstNonEmpty(props["volume-name"], props["name"], obj.Name),
 		SerialNumber: props["serial-number"],
 		DurableID:    props["durable-id"],
+		WWN:          firstNonEmpty(props["wwn"], props["volume-wwn"], props["volume-wwid"]),
 		PoolName:     firstNonEmpty(props["storage-pool-name"], props["storage-poolname"], props["pool-name"]),
 		VDiskName:    firstNonEmpty(props["virtual-disk-name"], props["virtual-diskname"], props["vdisk-name"]),
 		Size:         props["size"],

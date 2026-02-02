@@ -24,6 +24,9 @@ func TestVolumesFromResponse(t *testing.T) {
 	if volume.DurableID != "V1" {
 		t.Fatalf("unexpected durable id: %s", volume.DurableID)
 	}
+	if volume.WWN != "600c0ff0000000000000000000000001" {
+		t.Fatalf("unexpected wwn: %s", volume.WWN)
+	}
 	if volume.PoolName != "pool-a" {
 		t.Fatalf("unexpected pool name: %s", volume.PoolName)
 	}

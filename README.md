@@ -63,6 +63,8 @@ resource "hpe_msa_volume" "example" {
 
 If `pool`/`vdisk` is omitted and the array reports exactly one pool, the provider will use that pool automatically.
 
+The volume resource also exposes `scsi_wwn`, which surfaces the host-visible SCSI/NAA identifier reported by the array for stable `/dev/disk/by-id` usage.
+
 Import by serial number:
 
 ```bash
