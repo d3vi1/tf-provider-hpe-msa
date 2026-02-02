@@ -17,6 +17,7 @@ type Object struct {
 	Name       string     `xml:"name,attr"`
 	OID        string     `xml:"oid,attr"`
 	Properties []Property `xml:"PROPERTY"`
+	Objects    []Object   `xml:"OBJECT"`
 }
 
 type Property struct {
@@ -45,7 +46,7 @@ func (o Object) PropertyValue(name string) (string, bool) {
 }
 
 func (r Response) Status() (Status, bool) {
-	for _, obj := range r.Objects {
+	for _, obj := range r.AllObjects() {
 		if obj.BaseType == "status" || obj.Name == "status" {
 			status := Status{}
 			if value, ok := obj.PropertyValue("response-type"); ok {

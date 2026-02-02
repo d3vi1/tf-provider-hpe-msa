@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"strings"
 
 	"github.com/d3vi1/tf-provider-hpe-msa/internal/msa"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -42,7 +43,7 @@ func (d *hostDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 				Computed:    true,
 			},
 			"host_id": schema.StringAttribute{
-				Description: "Host ID reported by the array.",
+				Description: "Host serial number reported by the array.",
 				Computed:    true,
 			},
 			"properties": schema.MapAttribute{
@@ -85,27 +86,34 @@ func (d *hostDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 
-	response, err := d.client.Execute(ctx, "show", "hosts")
+	response, err := d.client.Execute(ctx, "show", "host-groups")
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to query hosts", err.Error())
 		return
 	}
 
-	obj, diags := findObjectByName(response, data.Name.ValueString(), []string{"host-name", "name"}, "host")
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
+	hosts := msa.HostsFromResponse(response)
+	var host *msa.Host
+	for _, candidate := range hosts {
+		if strings.EqualFold(candidate.Name, data.Name.ValueString()) {
+			host = &candidate
+			break
+		}
+	}
+	if host == nil {
+		resp.Diagnostics.AddError("Host not found", "No host with the requested name was returned by the array")
 		return
 	}
 
-	props := obj.PropertyMap()
+	props := host.Properties
 	propsValue, diag := types.MapValueFrom(ctx, types.StringType, props)
 	if diag.HasError() {
 		resp.Diagnostics.Append(diag...)
 		return
 	}
 
-	hostID := props["host-id"]
-	data.ID = types.StringValue(firstNonEmpty(hostID, obj.OID, data.Name.ValueString()))
+	hostID := host.SerialNumber
+	data.ID = types.StringValue(firstNonEmpty(hostID, host.DurableID, data.Name.ValueString()))
 	if hostID != "" {
 		data.HostID = types.StringValue(hostID)
 	} else {
