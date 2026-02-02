@@ -69,3 +69,62 @@ func TestInitiatorStateFromModelReadUsesAPI(t *testing.T) {
 		t.Fatalf("unexpected id: %s", state.ID.ValueString())
 	}
 }
+
+func TestInitiatorStateFromModelReadPreservesProfileCaseWhenEqual(t *testing.T) {
+	ctx := context.Background()
+	model := initiatorResourceModel{
+		InitiatorID: types.StringValue("50:aa:bb:cc:dd:ee:ff:00"),
+		Nickname:    types.StringValue("init1"),
+		Profile:     types.StringValue("Standard"),
+	}
+	initiator := &msa.Initiator{
+		ID:       "50aabbccddeeff00",
+		Nickname: "init1",
+		Profile:  "Standard",
+	}
+
+	state, diags := initiatorStateFromModel(ctx, model, initiator, false)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if state.Profile.ValueString() != "Standard" {
+		t.Fatalf("unexpected profile: %s", state.Profile.ValueString())
+	}
+}
+
+func TestInitiatorStateFromModelReadUpdatesProfileOnDrift(t *testing.T) {
+	ctx := context.Background()
+	model := initiatorResourceModel{
+		InitiatorID: types.StringValue("50:aa:bb:cc:dd:ee:ff:00"),
+		Nickname:    types.StringValue("init1"),
+		Profile:     types.StringValue("standard"),
+	}
+	initiator := &msa.Initiator{
+		ID:       "50aabbccddeeff00",
+		Nickname: "init1",
+		Profile:  "hp-ux",
+	}
+
+	state, diags := initiatorStateFromModel(ctx, model, initiator, false)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if state.Profile.ValueString() != "hp-ux" {
+		t.Fatalf("unexpected profile: %s", state.Profile.ValueString())
+	}
+}
+
+func TestInitiatorLookupIDPrefersCanonicalID(t *testing.T) {
+	state := initiatorResourceModel{
+		ID:          types.StringValue("50aabbccddeeff00"),
+		InitiatorID: types.StringValue("50:aa:bb:cc:dd:ee:ff:00"),
+	}
+	if got := initiatorLookupID(state); got != "50aabbccddeeff00" {
+		t.Fatalf("unexpected lookup id: %s", got)
+	}
+
+	state.ID = types.StringNull()
+	if got := initiatorLookupID(state); got != "50:aa:bb:cc:dd:ee:ff:00" {
+		t.Fatalf("unexpected fallback id: %s", got)
+	}
+}

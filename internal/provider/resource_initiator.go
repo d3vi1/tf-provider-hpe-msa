@@ -151,13 +151,7 @@ func (r *initiatorResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	initID := ""
-	if !state.ID.IsNull() && !state.ID.IsUnknown() {
-		initID = strings.TrimSpace(state.ID.ValueString())
-	}
-	if initID == "" {
-		initID = strings.TrimSpace(state.InitiatorID.ValueString())
-	}
+	initID := initiatorLookupID(state)
 	nickname := strings.TrimSpace(state.Nickname.ValueString())
 	if initID == "" && nickname == "" {
 		resp.Diagnostics.AddError("Invalid state", "initiator_id is required")
@@ -317,7 +311,13 @@ func initiatorStateFromModel(ctx context.Context, model initiatorResourceModel, 
 	if preservePlan && !model.Profile.IsNull() && !model.Profile.IsUnknown() && strings.TrimSpace(model.Profile.ValueString()) != "" {
 		state.Profile = types.StringValue(strings.TrimSpace(model.Profile.ValueString()))
 	} else if initiator.Profile != "" {
-		state.Profile = types.StringValue(strings.ToLower(initiator.Profile))
+		apiProfile := strings.TrimSpace(initiator.Profile)
+		if !model.Profile.IsNull() && !model.Profile.IsUnknown() && strings.TrimSpace(model.Profile.ValueString()) != "" &&
+			strings.EqualFold(model.Profile.ValueString(), apiProfile) {
+			state.Profile = types.StringValue(strings.TrimSpace(model.Profile.ValueString()))
+		} else {
+			state.Profile = types.StringValue(strings.ToLower(apiProfile))
+		}
 	}
 	if initiator.HostID != "" {
 		state.HostID = types.StringValue(initiator.HostID)
@@ -334,4 +334,13 @@ func initiatorStateFromModel(ctx context.Context, model initiatorResourceModel, 
 	state.Properties = propsValue
 
 	return state, diags
+}
+
+func initiatorLookupID(state initiatorResourceModel) string {
+	if !state.ID.IsNull() && !state.ID.IsUnknown() {
+		if value := strings.TrimSpace(state.ID.ValueString()); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(state.InitiatorID.ValueString())
 }
