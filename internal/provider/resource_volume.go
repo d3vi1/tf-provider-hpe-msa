@@ -42,11 +42,6 @@ type volumeResourceModel struct {
 	AllowDestroy types.Bool   `tfsdk:"allow_destroy"`
 }
 
-type volumeTargetConfig struct {
-	Pool  types.String `tfsdk:"pool"`
-	VDisk types.String `tfsdk:"vdisk"`
-}
-
 func (r *volumeResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_msa_volume"
 }
@@ -131,8 +126,10 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	var config volumeTargetConfig
-	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	var configPool types.String
+	var configVDisk types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("pool"), &configPool)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("vdisk"), &configVDisk)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -158,7 +155,7 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 				return
 			}
 		} else if errors.Is(err, errVolumeTargetUnknown) {
-			if config.Pool.IsNull() && config.VDisk.IsNull() {
+			if configPool.IsNull() && configVDisk.IsNull() {
 				target, err = r.defaultPool(ctx)
 				if err != nil {
 					resp.Diagnostics.AddError("Missing pool or vdisk", err.Error())
