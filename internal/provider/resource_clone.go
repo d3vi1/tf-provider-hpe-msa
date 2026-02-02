@@ -164,7 +164,8 @@ func (r *cloneResource) Create(ctx context.Context, req resource.CreateRequest, 
 		if errors.As(err, &apiErr) {
 			msg := strings.ToLower(apiErr.Status.Response)
 			if strings.Contains(msg, "name already in use") || strings.Contains(msg, "already exists") {
-				// Continue to read existing clone by name.
+				resp.Diagnostics.AddError("Clone already exists", "Import the clone or choose a different name.")
+				return
 			} else {
 				resp.Diagnostics.AddError("Unable to copy volume", err.Error())
 				return
