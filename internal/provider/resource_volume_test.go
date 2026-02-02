@@ -109,16 +109,40 @@ func TestParseSizeToBytes(t *testing.T) {
 }
 
 func TestParseSizeToBytesStressInputs(t *testing.T) {
-	inputs := []string{
-		"1GB", "1GiB", "1gib", "1 G", "1 gB", "1G B",
-		"1.000GB", "1.5GiB", "9999999TB",
-		"", " ", "1", "1e3GB", "1_000GB", "GB",
-		"1.2.3GB", "1GB ", " 1GB", "\t2TB",
+	inputs := map[string]bool{
+		"1GB":       false,
+		"1GiB":      false,
+		"1gib":      false,
+		"1 G":       false,
+		"1 gB":      false,
+		"1G B":      true,
+		"1.000GB":   false,
+		"1.5GiB":    false,
+		"9999999TB": true,
+		"":          true,
+		" ":         true,
+		"1":         true,
+		"1e3GB":     true,
+		"1_000GB":   true,
+		"GB":        true,
+		"1.2.3GB":   true,
+		"1GB ":      false,
+		" 1GB":      false,
+		"\t2TB":     false,
 	}
 
-	for _, input := range inputs {
+	for input, wantErr := range inputs {
 		value, err := parseSizeToBytes(input)
-		if err == nil && value <= 0 {
+		if wantErr {
+			if err == nil {
+				t.Fatalf("expected error for %q, got %d", input, value)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("unexpected error for %q: %v", input, err)
+		}
+		if value <= 0 {
 			t.Fatalf("expected positive value for %q, got %d", input, value)
 		}
 	}
