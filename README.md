@@ -60,6 +60,8 @@ resource "hpe_msa_volume" "example" {
 }
 ```
 
+If `pool`/`vdisk` is omitted and the array reports exactly one pool, the provider will use that pool automatically.
+
 Import by serial number:
 
 ```bash
