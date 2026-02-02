@@ -40,10 +40,6 @@ type cloneResourceModel struct {
 	AllowDestroy    types.Bool   `tfsdk:"allow_destroy"`
 }
 
-type cloneSourceConfig struct {
-	SourceSnapshot types.String `tfsdk:"source_snapshot"`
-}
-
 func (r *cloneResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_msa_clone"
 }
@@ -128,8 +124,8 @@ func (r *cloneResource) Create(ctx context.Context, req resource.CreateRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	var config cloneSourceConfig
-	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	var configSource types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("source_snapshot"), &configSource)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -138,11 +134,11 @@ func (r *cloneResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	if config.SourceSnapshot.IsNull() {
+	if configSource.IsNull() {
 		resp.Diagnostics.AddError("Invalid configuration", "source_snapshot must be set to create a clone")
 		return
 	}
-	if config.SourceSnapshot.IsUnknown() {
+	if configSource.IsUnknown() {
 		resp.Diagnostics.AddError("Invalid configuration", "source_snapshot must be known to create a clone")
 		return
 	}
