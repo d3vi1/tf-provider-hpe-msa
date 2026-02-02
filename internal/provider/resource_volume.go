@@ -146,6 +146,9 @@ func (r *volumeResource) Create(ctx context.Context, req resource.CreateRequest,
 				resp.Diagnostics.AddError("Missing pool or vdisk", err.Error())
 				return
 			}
+		} else if errors.Is(err, errVolumeTargetUnknown) {
+			resp.Diagnostics.AddError("Pool/vdisk unknown", "pool or vdisk must be known during planning to create a volume")
+			return
 		} else {
 			resp.Diagnostics.AddError("Invalid configuration", err.Error())
 			return
@@ -290,6 +293,7 @@ func (r *volumeResource) ImportState(ctx context.Context, req resource.ImportSta
 var errVolumeNotFound = errors.New("volume not found")
 var errVolumeTargetMissing = errors.New("volume target missing")
 var errVolumeTargetConflict = errors.New("volume target conflict")
+var errVolumeTargetUnknown = errors.New("volume target unknown")
 
 func (r *volumeResource) findVolume(ctx context.Context, name, id string) (*msa.Volume, error) {
 	response, err := r.client.Execute(ctx, "show", "volumes")
@@ -335,18 +339,25 @@ func (r *volumeResource) waitForVolume(ctx context.Context, name, id string) (*m
 }
 
 func resolveVolumeTarget(plan volumeResourceModel) (string, error) {
-	pool := strings.TrimSpace(plan.Pool.ValueString())
-	vdisk := strings.TrimSpace(plan.VDisk.ValueString())
+	poolValue := strings.TrimSpace(plan.Pool.ValueString())
+	vdiskValue := strings.TrimSpace(plan.VDisk.ValueString())
+
+	poolKnown := !plan.Pool.IsUnknown() && poolValue != ""
+	vdiskKnown := !plan.VDisk.IsUnknown() && vdiskValue != ""
 
 	switch {
-	case pool != "" && vdisk != "":
+	case poolKnown && vdiskKnown:
 		return "", errVolumeTargetConflict
-	case pool == "" && vdisk == "":
+	case poolKnown:
+		return poolValue, nil
+	case vdiskKnown:
+		return vdiskValue, nil
+	case plan.Pool.IsUnknown() || plan.VDisk.IsUnknown():
+		return "", errVolumeTargetUnknown
+	case poolValue == "" && vdiskValue == "":
 		return "", errVolumeTargetMissing
-	case pool != "":
-		return pool, nil
 	default:
-		return vdisk, nil
+		return "", errVolumeTargetMissing
 	}
 }
 
@@ -370,6 +381,11 @@ func poolNamesFromResponse(response msa.Response) []string {
 	names := make([]string, 0)
 	seen := make(map[string]struct{})
 	for _, obj := range response.ObjectsWithoutStatus() {
+		if obj.BaseType != "pools" && obj.BaseType != "pool" {
+			if _, ok := obj.PropertyValue("pool-name"); !ok {
+				continue
+			}
+		}
 		props := obj.PropertyMap()
 		name := firstNonEmpty(props["pool-name"], props["name"], obj.Name)
 		if name == "" {
