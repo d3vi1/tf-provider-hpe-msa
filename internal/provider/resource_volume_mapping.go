@@ -382,33 +382,23 @@ func mappingStateFromModel(ctx context.Context, model volumeMappingResourceModel
 	var diags diag.Diagnostics
 
 	state.VolumeName = types.StringValue(mapping.Volume)
-	if mapping.Access != "" {
+	if !model.Access.IsNull() && !model.Access.IsUnknown() && strings.TrimSpace(model.Access.ValueString()) != "" {
+		state.Access = types.StringValue(strings.TrimSpace(model.Access.ValueString()))
+	} else if mapping.Access != "" {
 		state.Access = types.StringValue(mapping.Access)
 	} else {
 		state.Access = types.StringNull()
 	}
-	if mapping.LUN != "" {
+	if !model.LUN.IsNull() && !model.LUN.IsUnknown() && strings.TrimSpace(model.LUN.ValueString()) != "" {
+		state.LUN = types.StringValue(strings.TrimSpace(model.LUN.ValueString()))
+	} else if mapping.LUN != "" {
 		state.LUN = types.StringValue(mapping.LUN)
 	} else {
 		state.LUN = types.StringNull()
 	}
 
-	ports := strings.TrimSpace(mapping.Ports)
-	if ports != "" {
-		portItems := strings.Split(ports, ",")
-		cleaned := make([]string, 0, len(portItems))
-		for _, item := range portItems {
-			item = strings.TrimSpace(item)
-			if item != "" {
-				cleaned = append(cleaned, item)
-			}
-		}
-		setValue, diag := types.SetValueFrom(ctx, types.StringType, cleaned)
-		if diag.HasError() {
-			diags.Append(diag...)
-			return state, diags
-		}
-		state.Ports = setValue
+	if !model.Ports.IsNull() && !model.Ports.IsUnknown() {
+		state.Ports = model.Ports
 	} else {
 		state.Ports = types.SetNull(types.StringType)
 	}
