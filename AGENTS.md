@@ -95,7 +95,8 @@ For each PR:
 1) Run CI, fix failures.
 2) Perform a Codex “self review” and apply improvements.
 3) Perform a GitHub Copilot-style review simulation (generate a review checklist and address it).
-4) Only then merge (squash+merge), delete the branch, and proceed to the next issue.
+4) Wait for codex-bot review comment on the PR; address any feedback before proceeding.
+5) Only then merge (squash+merge), delete the branch, and proceed to the next issue.
 
 Stop conditions
 •⁠  ⁠If an operation could delete real data unintentionally, stop and ask for user confirmation.
