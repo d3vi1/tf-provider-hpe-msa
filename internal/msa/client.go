@@ -96,34 +96,44 @@ func NewClient(cfg Config) (*Client, error) {
 }
 
 func (c *Client) Login(ctx context.Context) (string, error) {
-	hash := loginHash(c.username, c.password)
-	loginURL := fmt.Sprintf("%s/api/login/%s", c.baseURL, hash)
+	for _, hash := range loginHashes(c.username, c.password) {
+		loginURL := fmt.Sprintf("%s/api/login/%s", c.baseURL, hash)
 
-	body, _, status, err := c.getWithRetry(ctx, loginURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("login request failed: %w", err)
-	}
-	if status != http.StatusOK {
-		return "", fmt.Errorf("login unexpected HTTP status %d", status)
-	}
+		body, _, status, err := c.getWithRetry(ctx, loginURL, nil)
+		if err != nil {
+			return "", fmt.Errorf("login request failed: %w", err)
+		}
+		if status != http.StatusOK {
+			return "", fmt.Errorf("login unexpected HTTP status %d", status)
+		}
 
-	response, err := parseResponse(body)
-	if err != nil {
-		return "", fmt.Errorf("login response parse failed: %w", err)
-	}
+		response, err := parseResponse(body)
+		if err != nil {
+			return "", fmt.Errorf("login response parse failed: %w", err)
+		}
 
-	statusObj, ok := response.Status()
-	if !ok {
-		return "", errors.New("login response missing status object")
-	}
-	if !statusObj.Success() {
+		statusObj, ok := response.Status()
+		if !ok {
+			return "", errors.New("login response missing status object")
+		}
+
+		if statusObj.Success() {
+			if statusObj.Response == "" {
+				return "", errors.New("login response missing session key")
+			}
+			return statusObj.Response, nil
+		}
+
+		// If the hash variant doesn't match the array's expected format, the MSA
+		// responds with an authentication error. Try the next hash variant.
+		if strings.Contains(strings.ToLower(statusObj.Response), "authentication") {
+			continue
+		}
+
 		return "", fmt.Errorf("login failed: %s", statusObj.Response)
 	}
-	if statusObj.Response == "" {
-		return "", errors.New("login response missing session key")
-	}
 
-	return statusObj.Response, nil
+	return "", errors.New("login failed: authentication unsuccessful")
 }
 
 func (c *Client) Logout(ctx context.Context, sessionKey string) error {
@@ -221,8 +231,17 @@ func (c *Client) Execute(ctx context.Context, parts ...string) (Response, error)
 	return Response{}, err
 }
 
-func loginHash(username, password string) string {
-	sum := sha256.Sum256([]byte(username + "_" + password))
+func loginHashes(username, password string) []string {
+	// Some MSA firmware versions expect sha256("user_!pass") while others use
+	// sha256("user_pass"). Try both (most compatible).
+	return []string{
+		loginHash(username, password, "_!"),
+		loginHash(username, password, "_"),
+	}
+}
+
+func loginHash(username, password, delimiter string) string {
+	sum := sha256.Sum256([]byte(username + delimiter + password))
 	return hex.EncodeToString(sum[:])
 }
 

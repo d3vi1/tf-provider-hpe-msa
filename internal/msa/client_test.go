@@ -12,7 +12,7 @@ import (
 
 func TestLoginSuccess(t *testing.T) {
 	fixture := readFixture(t, "login_success.xml")
-	expectedHash := loginHash("user", "pass")
+	expectedHash := loginHash("user", "pass", "_!")
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/login/"+expectedHash {
@@ -37,10 +37,11 @@ func TestLoginSuccess(t *testing.T) {
 
 func TestLoginFailure(t *testing.T) {
 	fixture := readFixture(t, "login_error.xml")
-	expectedHash := loginHash("user", "pass")
+	expectedHash1 := loginHash("user", "pass", "_!")
+	expectedHash2 := loginHash("user", "pass", "_")
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/login/"+expectedHash {
+		if r.URL.Path != "/api/login/"+expectedHash1 && r.URL.Path != "/api/login/"+expectedHash2 {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
