@@ -74,6 +74,12 @@ func (r Response) Status() (Status, bool) {
 }
 
 func (s Status) Success() bool {
+	if s.ResponseTypeNumeric == 1 || strings.EqualFold(s.ResponseType, "error") {
+		return false
+	}
+	if s.ReturnCode == 0 {
+		return true
+	}
 	if s.ResponseTypeNumeric != 0 {
 		return false
 	}
