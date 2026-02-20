@@ -278,7 +278,7 @@ func TestClassifyVolumeDeleteErrorInUse(t *testing.T) {
 	if guardrail.summary != "Clone deletion blocked: in use" {
 		t.Fatalf("unexpected summary: %s", guardrail.summary)
 	}
-	if !strings.Contains(guardrail.detail, "Delete dependent snapshots/clones") {
+	if !strings.Contains(guardrail.detail, "Delete the dependent objects first") {
 		t.Fatalf("expected actionable dependency detail, got %s", guardrail.detail)
 	}
 	if !strings.Contains(guardrail.detail, "clone-app-01") {

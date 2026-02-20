@@ -300,6 +300,11 @@ func (r *volumeResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
+	if guardrail, ok := preDeleteVolumeUsageGuardrail(ctx, r.client, "volume", target, state.Name.ValueString(), id); ok {
+		resp.Diagnostics.AddError(guardrail.summary, guardrail.detail)
+		return
+	}
+
 	_, err := r.client.Execute(ctx, "delete", "volumes", target)
 	if err != nil {
 		if guardrail, ok := classifyVolumeDeleteError("volume", target, err); ok {
@@ -321,8 +326,9 @@ var errVolumeTargetConflict = errors.New("volume target conflict")
 var errVolumeTargetUnknown = errors.New("volume target unknown")
 
 type volumeDeleteGuardrail struct {
-	summary string
-	detail  string
+	summary   string
+	detail    string
+	retryable bool
 }
 
 func classifyVolumeDeleteError(resourceKind, target string, err error) (volumeDeleteGuardrail, bool) {
@@ -351,30 +357,82 @@ func classifyVolumeDeleteError(resourceKind, target string, err error) (volumeDe
 		resourceLabel := titleCaseWord(resourceKind)
 		return volumeDeleteGuardrail{
 			summary: fmt.Sprintf("%s deletion blocked: mapped", resourceLabel),
-			detail: fmt.Sprintf(
+			detail: withDeleteClassification(false, fmt.Sprintf(
 				"%s %q is still mapped to a host, host group, or initiator. Remove every `hpe_msa_volume_mapping` that references this %s (or unmap it directly on the array), then run `terraform apply` again. Array response: %s",
 				resourceLabel,
 				targetLabel,
 				normalizedKind,
 				message,
-			),
+			)),
+			retryable: false,
 		}, true
 	}
 
-	if containsAny(normalized, "in use", "in-use", "being used", "busy", "snapshot", "volume copy", "copy in progress") {
+	if containsAny(normalized, "snapshot", "snapshots", "clone", "clones", "dependent volume", "dependent snapshot", "parent volume", "base volume") {
 		resourceLabel := titleCaseWord(resourceKind)
 		return volumeDeleteGuardrail{
 			summary: fmt.Sprintf("%s deletion blocked: in use", resourceLabel),
-			detail: fmt.Sprintf(
-				"%s %q is still in use. Delete dependent snapshots/clones and wait for active copy jobs to finish before retrying deletion. Array response: %s",
+			detail: withDeleteClassification(false, fmt.Sprintf(
+				"%s %q is still in use by dependent snapshots or clones. Delete the dependent objects first, then run `terraform apply` again. Array response: %s",
 				resourceLabel,
 				targetLabel,
 				message,
-			),
+			)),
+			retryable: false,
+		}, true
+	}
+
+	if containsAny(normalized, "volume copy", "copy in progress", "existing volume copy", "copy operation", "operation in progress", "copy is in progress") {
+		resourceLabel := titleCaseWord(resourceKind)
+		return volumeDeleteGuardrail{
+			summary: fmt.Sprintf("%s deletion blocked: active copy", resourceLabel),
+			detail: withDeleteClassification(true, fmt.Sprintf(
+				"%s %q has an active volume-copy job. Wait for the copy to finish, then run `terraform apply` again. Array response: %s",
+				resourceLabel,
+				targetLabel,
+				message,
+			)),
+			retryable: true,
+		}, true
+	}
+
+	if containsAny(normalized, "session", "sessions", "connection", "connections", "logged in", "logged-in", "initiator logged in", "host connected") {
+		resourceLabel := titleCaseWord(resourceKind)
+		return volumeDeleteGuardrail{
+			summary: fmt.Sprintf("%s deletion blocked: active sessions", resourceLabel),
+			detail: withDeleteClassification(true, fmt.Sprintf(
+				"%s %q still has active host/initiator sessions. Disconnect related sessions, then run `terraform apply` again. Array response: %s",
+				resourceLabel,
+				targetLabel,
+				message,
+			)),
+			retryable: true,
+		}, true
+	}
+
+	if containsAny(normalized, "in use", "in-use", "being used", "busy", "temporarily", "try again", "timed out", "timeout", "resource lock", "locked", "temporarily unavailable") {
+		resourceLabel := titleCaseWord(resourceKind)
+		return volumeDeleteGuardrail{
+			summary: fmt.Sprintf("%s deletion blocked: retryable", resourceLabel),
+			detail: withDeleteClassification(true, fmt.Sprintf(
+				"%s %q could not be deleted due to a transient array condition. Wait briefly, verify array health, and run `terraform apply` again. Array response: %s",
+				resourceLabel,
+				targetLabel,
+				message,
+			)),
+			retryable: true,
 		}, true
 	}
 
 	return volumeDeleteGuardrail{}, false
+}
+
+func withDeleteClassification(retryable bool, detail string) string {
+	classification := "terminal"
+	if retryable {
+		classification = "retryable"
+	}
+	return fmt.Sprintf("Classification: %s. %s", classification, detail)
 }
 
 func titleCaseWord(value string) string {

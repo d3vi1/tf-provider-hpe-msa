@@ -281,6 +281,11 @@ func (r *cloneResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
+	if guardrail, ok := preDeleteVolumeUsageGuardrail(ctx, r.client, "clone", target, state.Name.ValueString(), id); ok {
+		resp.Diagnostics.AddError(guardrail.summary, guardrail.detail)
+		return
+	}
+
 	_, err := r.client.Execute(ctx, "delete", "volumes", target)
 	if err != nil {
 		if guardrail, ok := classifyVolumeDeleteError("clone", target, err); ok {
