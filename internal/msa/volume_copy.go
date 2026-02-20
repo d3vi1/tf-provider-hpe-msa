@@ -85,6 +85,7 @@ type VolumeCopyJob struct {
 
 func (c *Client) FindActiveVolumeCopyJob(ctx context.Context, sourceHint, targetHint string) (*VolumeCopyJob, error) {
 	var commandErrs []error
+	commandSucceeded := false
 
 	for _, parts := range showVolumeCopyCommands {
 		response, err := c.Execute(ctx, parts...)
@@ -92,15 +93,19 @@ func (c *Client) FindActiveVolumeCopyJob(ctx context.Context, sourceHint, target
 			commandErrs = append(commandErrs, fmt.Errorf("%s: %w", strings.Join(parts, " "), err))
 			continue
 		}
+		commandSucceeded = true
 
 		jobs := VolumeCopyJobsFromResponse(response)
 		job := selectBestActiveVolumeCopyJob(jobs, sourceHint, targetHint)
 		if job != nil {
 			return job, nil
 		}
-		return nil, nil
+		continue
 	}
 
+	if commandSucceeded {
+		return nil, nil
+	}
 	if len(commandErrs) == 0 {
 		return nil, nil
 	}

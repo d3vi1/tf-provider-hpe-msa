@@ -311,16 +311,11 @@ type cloneConflictRetryPlanner struct {
 }
 
 func (p *cloneConflictRetryPlanner) next(job *msa.VolumeCopyJob) (time.Duration, string, bool) {
-	if p.strategy == cloneConflictRetryStrategyUnset {
-		if job != nil && job.HasETA {
-			p.strategy = cloneConflictRetryStrategyETA
-		} else {
-			p.strategy = cloneConflictRetryStrategyNoETA
-		}
-	}
-
 	if job != nil && job.HasETA {
+		p.strategy = cloneConflictRetryStrategyETA
 		p.lastETA = job.ETA
+	} else if p.strategy == cloneConflictRetryStrategyUnset {
+		p.strategy = cloneConflictRetryStrategyNoETA
 	}
 
 	switch p.strategy {

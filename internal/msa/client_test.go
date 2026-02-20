@@ -279,6 +279,52 @@ func TestFindActiveVolumeCopyJobFallsBackToVolumeCopiesCommand(t *testing.T) {
 	}
 }
 
+func TestFindActiveVolumeCopyJobFallsBackWhenPrimaryHasNoActiveJobs(t *testing.T) {
+	emptyFixture := readFixture(t, "command_success.xml")
+	fallbackFixture := readFixture(t, "show_volume_copy_active_eta.xml")
+	volumeCopyCalls := 0
+	volumeCopiesCalls := 0
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/login/"):
+			w.Header().Set("Content-Type", "text/xml")
+			_, _ = w.Write(loginResponse("session-fallback-empty"))
+		case r.URL.Path == "/api/show/volume-copy":
+			volumeCopyCalls++
+			w.Header().Set("Content-Type", "text/xml")
+			_, _ = w.Write(emptyFixture)
+		case r.URL.Path == "/api/show/volume-copies":
+			volumeCopiesCalls++
+			w.Header().Set("Content-Type", "text/xml")
+			_, _ = w.Write(fallbackFixture)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	client.retryConfig = RetryConfig{MaxAttempts: 1}
+
+	job, err := client.FindActiveVolumeCopyJob(context.Background(), "snap-prod-001", "clone-prod-001")
+	if err != nil {
+		t.Fatalf("unexpected lookup error: %v", err)
+	}
+	if job == nil {
+		t.Fatalf("expected active volume-copy job from fallback command")
+	}
+	if job.ID != "job-77" {
+		t.Fatalf("expected fallback job job-77, got %q", job.ID)
+	}
+	if volumeCopyCalls != 1 {
+		t.Fatalf("expected one volume-copy call, got %d", volumeCopyCalls)
+	}
+	if volumeCopiesCalls != 1 {
+		t.Fatalf("expected one volume-copies call, got %d", volumeCopiesCalls)
+	}
+}
+
 func TestParseVolumeCopyETA(t *testing.T) {
 	cases := []struct {
 		name      string

@@ -115,6 +115,47 @@ func TestCloneConflictRetryPlannerNoETAPath(t *testing.T) {
 	}
 }
 
+func TestCloneConflictRetryPlannerSwitchesToETAWhenAvailable(t *testing.T) {
+	planner := cloneConflictRetryPlanner{}
+
+	wait, path, ok := planner.next(nil)
+	if !ok {
+		t.Fatalf("expected initial no-eta retry")
+	}
+	if path != cloneRetryPathNoETA {
+		t.Fatalf("expected initial no-eta path, got %s", path)
+	}
+	if wait != cloneCopyConflictNoETAWaits[0] {
+		t.Fatalf("expected initial wait %s, got %s", cloneCopyConflictNoETAWaits[0], wait)
+	}
+
+	job := &msa.VolumeCopyJob{
+		HasETA: true,
+		ETA:    4 * time.Minute,
+	}
+	expectedWait := 4*time.Minute + cloneCopyETASafetyBuffer
+	for i := 0; i < cloneCopyConflictETAMaxRetries; i++ {
+		wait, path, ok = planner.next(job)
+		if !ok {
+			t.Fatalf("expected eta retry after switch on iteration %d", i)
+		}
+		if path != cloneRetryPathETA {
+			t.Fatalf("expected eta path after switch, got %s", path)
+		}
+		if wait != expectedWait {
+			t.Fatalf("expected wait %s, got %s", expectedWait, wait)
+		}
+	}
+
+	_, path, ok = planner.next(job)
+	if ok {
+		t.Fatalf("expected eta retries to stop after %d retries", cloneCopyConflictETAMaxRetries)
+	}
+	if path != cloneRetryPathETA {
+		t.Fatalf("expected planner to remain on eta path, got %s", path)
+	}
+}
+
 func TestCloneConflictContext(t *testing.T) {
 	contextState := newCloneConflictContext("source-initial", "target-initial")
 	if got := contextState.String(); !strings.Contains(got, "source=source-initial") || !strings.Contains(got, "target=target-initial") {
