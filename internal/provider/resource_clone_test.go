@@ -1,7 +1,11 @@
 package provider
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/d3vi1/tf-provider-hpe-msa/internal/msa"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -59,5 +63,109 @@ func TestCloneStateFromModelSCSIWWN(t *testing.T) {
 	state = cloneStateFromModel(model, volume)
 	if !state.SCSIWWN.IsNull() {
 		t.Fatalf("expected scsi_wwn to be null when wwn missing")
+	}
+}
+
+func TestCloneConflictRetryPlannerETAPath(t *testing.T) {
+	planner := cloneConflictRetryPlanner{}
+	job := &msa.VolumeCopyJob{
+		HasETA: true,
+		ETA:    2 * time.Minute,
+	}
+
+	for i := 0; i < cloneCopyConflictETAMaxRetries; i++ {
+		wait, path, ok := planner.next(job)
+		if !ok {
+			t.Fatalf("expected retry on eta iteration %d", i)
+		}
+		if path != cloneRetryPathETA {
+			t.Fatalf("expected eta path, got %s", path)
+		}
+		expectedWait := 2*time.Minute + cloneCopyETASafetyBuffer
+		if wait != expectedWait {
+			t.Fatalf("expected wait %s, got %s", expectedWait, wait)
+		}
+	}
+
+	_, _, ok := planner.next(job)
+	if ok {
+		t.Fatalf("expected eta retries to stop after %d retries", cloneCopyConflictETAMaxRetries)
+	}
+}
+
+func TestCloneConflictRetryPlannerNoETAPath(t *testing.T) {
+	planner := cloneConflictRetryPlanner{}
+
+	for i, expected := range cloneCopyConflictNoETAWaits {
+		wait, path, ok := planner.next(&msa.VolumeCopyJob{ID: "job-no-eta"})
+		if !ok {
+			t.Fatalf("expected retry on no-eta iteration %d", i)
+		}
+		if path != cloneRetryPathNoETA {
+			t.Fatalf("expected no-eta path, got %s", path)
+		}
+		if wait != expected {
+			t.Fatalf("expected wait %s, got %s", expected, wait)
+		}
+	}
+
+	_, _, ok := planner.next(nil)
+	if ok {
+		t.Fatalf("expected no-eta retries to stop after %d retries", len(cloneCopyConflictNoETAWaits))
+	}
+}
+
+func TestCloneConflictContext(t *testing.T) {
+	contextState := newCloneConflictContext("source-initial", "target-initial")
+	if got := contextState.String(); !strings.Contains(got, "source=source-initial") || !strings.Contains(got, "target=target-initial") {
+		t.Fatalf("unexpected initial context: %s", got)
+	}
+
+	contextState.update(&msa.VolumeCopyJob{
+		ID:     "job-52",
+		Source: "source-job",
+		Target: "target-job",
+		HasETA: true,
+		ETA:    95 * time.Second,
+	})
+
+	got := contextState.String()
+	if !strings.Contains(got, "job id=job-52") {
+		t.Fatalf("expected job id in context, got %s", got)
+	}
+	if !strings.Contains(got, "source=source-job") {
+		t.Fatalf("expected source in context, got %s", got)
+	}
+	if !strings.Contains(got, "target=target-job") {
+		t.Fatalf("expected target in context, got %s", got)
+	}
+	if !strings.Contains(got, "eta=1m35s") {
+		t.Fatalf("expected eta in context, got %s", got)
+	}
+}
+
+func TestCloneCopyConflictErrorMatching(t *testing.T) {
+	conflictErr := msa.APIError{
+		Status: msa.Status{
+			Response: "The operation cannot be completed because it conflicts with an existing volume copy in progress.",
+		},
+	}
+	if !isCloneCopyConflictError(conflictErr) {
+		t.Fatalf("expected conflict error match")
+	}
+
+	otherErr := msa.APIError{Status: msa.Status{Response: "Some other command failure"}}
+	if isCloneCopyConflictError(otherErr) {
+		t.Fatalf("did not expect conflict match")
+	}
+}
+
+func TestSleepWithContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := sleepWithContext(ctx, 5*time.Second)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
 	}
 }

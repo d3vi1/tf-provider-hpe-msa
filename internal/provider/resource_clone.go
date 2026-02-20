@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -14,10 +15,26 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 var _ resource.Resource = (*cloneResource)(nil)
 var _ resource.ResourceWithImportState = (*cloneResource)(nil)
+
+const (
+	cloneCopyConflictETAMaxRetries = 3
+	cloneCopyETASafetyBuffer       = 5 * time.Second
+	cloneRetryPathETA              = "eta"
+	cloneRetryPathNoETA            = "no-eta"
+)
+
+var cloneCopyConflictNoETAWaits = []time.Duration{
+	15 * time.Second,
+	30 * time.Second,
+	45 * time.Second,
+	180 * time.Second,
+	300 * time.Second,
+}
 
 func NewCloneResource() resource.Resource {
 	return &cloneResource{}
@@ -179,22 +196,14 @@ func (r *cloneResource) Create(ctx context.Context, req resource.CreateRequest, 
 	}
 	parts = append(parts, "name", name, source)
 
-	_, err = r.client.Execute(ctx, parts...)
+	err = r.executeCloneCopy(ctx, source, name, parts...)
 	if err != nil {
-		var apiErr msa.APIError
-		if errors.As(err, &apiErr) {
-			msg := strings.ToLower(apiErr.Status.Response)
-			if strings.Contains(msg, "name already in use") || strings.Contains(msg, "already exists") {
-				resp.Diagnostics.AddError("Clone already exists", "Import the clone or choose a different name.")
-				return
-			} else {
-				resp.Diagnostics.AddError("Unable to copy volume", err.Error())
-				return
-			}
-		} else {
-			resp.Diagnostics.AddError("Unable to copy volume", err.Error())
+		if isCloneAlreadyExistsError(err) {
+			resp.Diagnostics.AddError("Clone already exists", "Import the clone or choose a different name.")
 			return
 		}
+		resp.Diagnostics.AddError("Unable to copy volume", err.Error())
+		return
 	}
 
 	volume, err := r.waitForVolume(ctx, name, "")
@@ -286,6 +295,133 @@ func (r *cloneResource) ImportState(ctx context.Context, req resource.ImportStat
 var errCloneSnapshotMissing = errors.New("clone snapshot missing")
 var errCloneSnapshotUnknown = errors.New("clone snapshot unknown")
 
+type cloneConflictRetryStrategy int
+
+const (
+	cloneConflictRetryStrategyUnset cloneConflictRetryStrategy = iota
+	cloneConflictRetryStrategyETA
+	cloneConflictRetryStrategyNoETA
+)
+
+type cloneConflictRetryPlanner struct {
+	strategy     cloneConflictRetryStrategy
+	etaRetries   int
+	noETARetries int
+	lastETA      time.Duration
+}
+
+func (p *cloneConflictRetryPlanner) next(job *msa.VolumeCopyJob) (time.Duration, string, bool) {
+	if p.strategy == cloneConflictRetryStrategyUnset {
+		if job != nil && job.HasETA {
+			p.strategy = cloneConflictRetryStrategyETA
+		} else {
+			p.strategy = cloneConflictRetryStrategyNoETA
+		}
+	}
+
+	if job != nil && job.HasETA {
+		p.lastETA = job.ETA
+	}
+
+	switch p.strategy {
+	case cloneConflictRetryStrategyETA:
+		if p.etaRetries >= cloneCopyConflictETAMaxRetries {
+			return 0, cloneRetryPathETA, false
+		}
+		wait := cloneCopyETASafetyBuffer
+		if p.lastETA > 0 {
+			wait += p.lastETA
+		}
+		p.etaRetries++
+		return wait, cloneRetryPathETA, true
+	default:
+		if p.noETARetries >= len(cloneCopyConflictNoETAWaits) {
+			return 0, cloneRetryPathNoETA, false
+		}
+		wait := cloneCopyConflictNoETAWaits[p.noETARetries]
+		p.noETARetries++
+		return wait, cloneRetryPathNoETA, true
+	}
+}
+
+type cloneConflictContext struct {
+	jobID  string
+	source string
+	target string
+	eta    string
+}
+
+func newCloneConflictContext(source, target string) cloneConflictContext {
+	return cloneConflictContext{
+		source: strings.TrimSpace(source),
+		target: strings.TrimSpace(target),
+	}
+}
+
+func (c *cloneConflictContext) update(job *msa.VolumeCopyJob) {
+	if job == nil {
+		return
+	}
+
+	if value := strings.TrimSpace(job.ID); value != "" {
+		c.jobID = value
+	}
+	if value := strings.TrimSpace(job.Source); value != "" {
+		c.source = value
+	}
+	if value := strings.TrimSpace(job.Target); value != "" {
+		c.target = value
+	}
+	if job.HasETA {
+		c.eta = job.ETA.String()
+	} else if c.eta == "" {
+		if value := strings.TrimSpace(job.ETARaw); value != "" {
+			c.eta = value
+		}
+	}
+}
+
+func (c cloneConflictContext) fields() map[string]any {
+	fields := map[string]any{}
+	if c.jobID != "" {
+		fields["job_id"] = c.jobID
+	}
+	if c.source != "" {
+		fields["job_source"] = c.source
+	}
+	if c.target != "" {
+		fields["job_target"] = c.target
+	}
+	if c.eta != "" {
+		fields["job_eta"] = c.eta
+	}
+	return fields
+}
+
+func (c cloneConflictContext) String() string {
+	jobID := c.jobID
+	if jobID == "" {
+		jobID = "unknown"
+	}
+
+	source := c.source
+	if source == "" {
+		source = "unknown"
+	}
+
+	target := c.target
+	if target == "" {
+		target = "unknown"
+	}
+
+	eta := c.eta
+	if eta == "" {
+		eta = "unknown"
+	}
+
+	return fmt.Sprintf("job id=%s source=%s target=%s eta=%s", jobID, source, target, eta)
+}
+
 func resolveCloneSnapshot(plan cloneResourceModel) (string, error) {
 	if plan.SourceSnapshot.IsUnknown() {
 		return "", errCloneSnapshotUnknown
@@ -297,6 +433,114 @@ func resolveCloneSnapshot(plan cloneResourceModel) (string, error) {
 	}
 
 	return value, nil
+}
+
+func (r *cloneResource) executeCloneCopy(ctx context.Context, source, target string, parts ...string) error {
+	_, err := r.client.Execute(ctx, parts...)
+	if err == nil {
+		return nil
+	}
+	if isCloneAlreadyExistsError(err) {
+		return err
+	}
+	if !isCloneCopyConflictError(err) {
+		return err
+	}
+
+	return r.retryCloneCopyConflict(ctx, source, target, parts, err)
+}
+
+func (r *cloneResource) retryCloneCopyConflict(ctx context.Context, source, target string, parts []string, initialErr error) error {
+	planner := cloneConflictRetryPlanner{}
+	contextState := newCloneConflictContext(source, target)
+	lastErr := initialErr
+	attempts := 1
+
+	for {
+		job, lookupErr := r.client.FindActiveVolumeCopyJob(ctx, source, target)
+		if lookupErr != nil {
+			tflog.Warn(ctx, "Unable to query active volume-copy job during clone retry", map[string]any{
+				"attempt":      attempts,
+				"lookup_error": lookupErr.Error(),
+			})
+		}
+		contextState.update(job)
+
+		wait, retryPath, ok := planner.next(job)
+		if !ok {
+			return fmt.Errorf(
+				"copy volume failed after %d attempt(s); conflict context: %s: %w",
+				attempts,
+				contextState.String(),
+				lastErr,
+			)
+		}
+
+		fields := contextState.fields()
+		fields["attempt"] = attempts
+		fields["retry_path"] = retryPath
+		fields["wait_seconds"] = int(wait / time.Second)
+		tflog.Info(ctx, "Clone copy blocked by active volume-copy; waiting before retry", fields)
+
+		if err := sleepWithContext(ctx, wait); err != nil {
+			return fmt.Errorf(
+				"copy volume retry interrupted after %d attempt(s); conflict context: %s: %w",
+				attempts,
+				contextState.String(),
+				err,
+			)
+		}
+
+		_, err := r.client.Execute(ctx, parts...)
+		attempts++
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+		if isCloneAlreadyExistsError(err) {
+			return err
+		}
+		if !isCloneCopyConflictError(err) {
+			return err
+		}
+	}
+}
+
+func isCloneAlreadyExistsError(err error) bool {
+	var apiErr msa.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+
+	msg := strings.ToLower(apiErr.Status.Response)
+	return strings.Contains(msg, "name already in use") || strings.Contains(msg, "already exists")
+}
+
+func isCloneCopyConflictError(err error) bool {
+	var apiErr msa.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+
+	msg := strings.ToLower(apiErr.Status.Response)
+	return strings.Contains(msg, "existing volume copy in progress")
+}
+
+func sleepWithContext(ctx context.Context, wait time.Duration) error {
+	if wait <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (r *cloneResource) findVolume(ctx context.Context, name, id string) (*msa.Volume, error) {
@@ -332,10 +576,8 @@ func (r *cloneResource) waitForVolume(ctx context.Context, name, id string) (*ms
 			return nil, err
 		}
 		if i < len(waits)-1 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(wait):
+			if err := sleepWithContext(ctx, wait); err != nil {
+				return nil, err
 			}
 		}
 	}
