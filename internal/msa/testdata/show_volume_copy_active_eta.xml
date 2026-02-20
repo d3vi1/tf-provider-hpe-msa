@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RESPONSE VERSION="L100" REQUEST="show volume-copy">
+  <OBJECT basetype="status" name="status" oid="1">
+    <PROPERTY name="response-type" type="string">Success</PROPERTY>
+    <PROPERTY name="response-type-numeric" type="uint32">0</PROPERTY>
+    <PROPERTY name="response" type="string">OK</PROPERTY>
+    <PROPERTY name="return-code" type="sint32">0</PROPERTY>
+  </OBJECT>
+  <OBJECT basetype="volume-copy" name="volume-copy" oid="77">
+    <PROPERTY name="job-id" type="string">job-77</PROPERTY>
+    <PROPERTY name="source-volume-name" type="string">snap-prod-001</PROPERTY>
+    <PROPERTY name="destination-volume-name" type="string">clone-prod-001</PROPERTY>
+    <PROPERTY name="copy-status" type="string">In Progress</PROPERTY>
+    <PROPERTY name="estimated-time-remaining" type="string">00:02:00</PROPERTY>
+    <PROPERTY name="progress" type="string">51%</PROPERTY>
+  </OBJECT>
+  <OBJECT basetype="volume-copy" name="volume-copy" oid="78">
+    <PROPERTY name="job-id" type="string">job-78</PROPERTY>
+    <PROPERTY name="source-volume-name" type="string">snap-prod-000</PROPERTY>
+    <PROPERTY name="destination-volume-name" type="string">clone-prod-000</PROPERTY>
+    <PROPERTY name="copy-status" type="string">Completed</PROPERTY>
+    <PROPERTY name="estimated-time-remaining" type="string">00:00:00</PROPERTY>
+    <PROPERTY name="progress" type="string">100%</PROPERTY>
+  </OBJECT>
+</RESPONSE>

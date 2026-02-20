@@ -300,8 +300,17 @@ func (r *volumeResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
+	if guardrail, ok := preDeleteVolumeUsageGuardrail(ctx, r.client, "volume", target, state.Name.ValueString(), id); ok {
+		resp.Diagnostics.AddError(guardrail.summary, guardrail.detail)
+		return
+	}
+
 	_, err := r.client.Execute(ctx, "delete", "volumes", target)
 	if err != nil {
+		if guardrail, ok := classifyVolumeDeleteError("volume", target, err); ok {
+			resp.Diagnostics.AddError(guardrail.summary, guardrail.detail)
+			return
+		}
 		resp.Diagnostics.AddError("Unable to delete volume", err.Error())
 		return
 	}
@@ -315,6 +324,136 @@ var errVolumeNotFound = errors.New("volume not found")
 var errVolumeTargetMissing = errors.New("volume target missing")
 var errVolumeTargetConflict = errors.New("volume target conflict")
 var errVolumeTargetUnknown = errors.New("volume target unknown")
+
+type volumeDeleteGuardrail struct {
+	summary   string
+	detail    string
+	retryable bool
+}
+
+func classifyVolumeDeleteError(resourceKind, target string, err error) (volumeDeleteGuardrail, bool) {
+	var apiErr msa.APIError
+	if !errors.As(err, &apiErr) {
+		return volumeDeleteGuardrail{}, false
+	}
+
+	message := strings.TrimSpace(apiErr.Status.Response)
+	if message == "" {
+		return volumeDeleteGuardrail{}, false
+	}
+	normalized := strings.ToLower(message)
+	resourceKind = strings.TrimSpace(resourceKind)
+	if resourceKind == "" {
+		resourceKind = "volume"
+	}
+	normalizedKind := strings.ToLower(resourceKind)
+
+	targetLabel := strings.TrimSpace(target)
+	if targetLabel == "" {
+		targetLabel = resourceKind
+	}
+
+	if containsAny(normalized, "mapped", "mapping", "unmap") {
+		resourceLabel := titleCaseWord(resourceKind)
+		return volumeDeleteGuardrail{
+			summary: fmt.Sprintf("%s deletion blocked: mapped", resourceLabel),
+			detail: withDeleteClassification(false, fmt.Sprintf(
+				"%s %q is still mapped to a host, host group, or initiator. Remove every `hpe_msa_volume_mapping` that references this %s (or unmap it directly on the array), then run `terraform apply` again. Array response: %s",
+				resourceLabel,
+				targetLabel,
+				normalizedKind,
+				message,
+			)),
+			retryable: false,
+		}, true
+	}
+
+	if containsAny(normalized, "snapshot", "snapshots", "clone", "clones", "dependent volume", "dependent snapshot", "parent volume", "base volume") {
+		resourceLabel := titleCaseWord(resourceKind)
+		return volumeDeleteGuardrail{
+			summary: fmt.Sprintf("%s deletion blocked: in use", resourceLabel),
+			detail: withDeleteClassification(false, fmt.Sprintf(
+				"%s %q is still in use by dependent snapshots or clones. Delete the dependent objects first, then run `terraform apply` again. Array response: %s",
+				resourceLabel,
+				targetLabel,
+				message,
+			)),
+			retryable: false,
+		}, true
+	}
+
+	if containsAny(normalized, "volume copy", "copy in progress", "existing volume copy", "copy operation", "operation in progress", "copy is in progress") {
+		resourceLabel := titleCaseWord(resourceKind)
+		return volumeDeleteGuardrail{
+			summary: fmt.Sprintf("%s deletion blocked: active copy", resourceLabel),
+			detail: withDeleteClassification(true, fmt.Sprintf(
+				"%s %q has an active volume-copy job. Wait for the copy to finish, then run `terraform apply` again. Array response: %s",
+				resourceLabel,
+				targetLabel,
+				message,
+			)),
+			retryable: true,
+		}, true
+	}
+
+	if containsAny(normalized, "session", "sessions", "connection", "connections", "logged in", "logged-in", "initiator logged in", "host connected") {
+		resourceLabel := titleCaseWord(resourceKind)
+		return volumeDeleteGuardrail{
+			summary: fmt.Sprintf("%s deletion blocked: active sessions", resourceLabel),
+			detail: withDeleteClassification(true, fmt.Sprintf(
+				"%s %q still has active host/initiator sessions. Disconnect related sessions, then run `terraform apply` again. Array response: %s",
+				resourceLabel,
+				targetLabel,
+				message,
+			)),
+			retryable: true,
+		}, true
+	}
+
+	if containsAny(normalized, "in use", "in-use", "being used", "busy", "temporarily", "try again", "timed out", "timeout", "resource lock", "locked", "temporarily unavailable") {
+		resourceLabel := titleCaseWord(resourceKind)
+		return volumeDeleteGuardrail{
+			summary: fmt.Sprintf("%s deletion blocked: retryable", resourceLabel),
+			detail: withDeleteClassification(true, fmt.Sprintf(
+				"%s %q could not be deleted due to a transient array condition. Wait briefly, verify array health, and run `terraform apply` again. Array response: %s",
+				resourceLabel,
+				targetLabel,
+				message,
+			)),
+			retryable: true,
+		}, true
+	}
+
+	return volumeDeleteGuardrail{}, false
+}
+
+func withDeleteClassification(retryable bool, detail string) string {
+	classification := "terminal"
+	if retryable {
+		classification = "retryable"
+	}
+	return fmt.Sprintf("Classification: %s. %s", classification, detail)
+}
+
+func titleCaseWord(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
+}
+
+func containsAny(value string, candidates ...string) bool {
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if strings.Contains(value, candidate) {
+			return true
+		}
+	}
+	return false
+}
 
 func (r *volumeResource) findVolume(ctx context.Context, name, id string) (*msa.Volume, error) {
 	response, err := r.client.Execute(ctx, "show", "volumes")

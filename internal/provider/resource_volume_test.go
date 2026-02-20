@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"errors"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/d3vi1/tf-provider-hpe-msa/internal/msa"
@@ -237,5 +239,65 @@ func TestVolumeStateFromModelSCSIWWN(t *testing.T) {
 	state = volumeStateFromModel(model, volume)
 	if !state.SCSIWWN.IsNull() {
 		t.Fatalf("expected scsi_wwn to be null when wwn missing")
+	}
+}
+
+func TestClassifyVolumeDeleteErrorMapped(t *testing.T) {
+	err := msa.APIError{
+		Status: msa.Status{
+			Response: "The operation cannot complete because the volume is mapped to a host.",
+		},
+	}
+
+	guardrail, ok := classifyVolumeDeleteError("volume", "vol-data-01", err)
+	if !ok {
+		t.Fatalf("expected mapped guardrail")
+	}
+	if guardrail.summary != "Volume deletion blocked: mapped" {
+		t.Fatalf("unexpected summary: %s", guardrail.summary)
+	}
+	if !strings.Contains(guardrail.detail, "hpe_msa_volume_mapping") {
+		t.Fatalf("expected actionable mapping detail, got %s", guardrail.detail)
+	}
+	if !strings.Contains(guardrail.detail, "vol-data-01") {
+		t.Fatalf("expected target in detail, got %s", guardrail.detail)
+	}
+}
+
+func TestClassifyVolumeDeleteErrorInUse(t *testing.T) {
+	err := msa.APIError{
+		Status: msa.Status{
+			Response: "The operation cannot complete because the volume is in use by a snapshot.",
+		},
+	}
+
+	guardrail, ok := classifyVolumeDeleteError("clone", "clone-app-01", err)
+	if !ok {
+		t.Fatalf("expected in-use guardrail")
+	}
+	if guardrail.summary != "Clone deletion blocked: in use" {
+		t.Fatalf("unexpected summary: %s", guardrail.summary)
+	}
+	if !strings.Contains(guardrail.detail, "Delete the dependent objects first") {
+		t.Fatalf("expected actionable dependency detail, got %s", guardrail.detail)
+	}
+	if !strings.Contains(guardrail.detail, "clone-app-01") {
+		t.Fatalf("expected target in detail, got %s", guardrail.detail)
+	}
+}
+
+func TestClassifyVolumeDeleteErrorNoMatch(t *testing.T) {
+	apiErr := msa.APIError{
+		Status: msa.Status{
+			Response: "No such volume exists.",
+		},
+	}
+	if _, ok := classifyVolumeDeleteError("volume", "vol-data-01", apiErr); ok {
+		t.Fatalf("did not expect guardrail for unrelated error")
+	}
+
+	plainErr := errors.New("network timeout")
+	if _, ok := classifyVolumeDeleteError("volume", "vol-data-01", plainErr); ok {
+		t.Fatalf("did not expect guardrail for non-API error")
 	}
 }
