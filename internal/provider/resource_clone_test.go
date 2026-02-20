@@ -87,9 +87,33 @@ func TestCloneConflictRetryPlannerETAPath(t *testing.T) {
 		}
 	}
 
-	_, _, ok := planner.next(job)
+	wait, path, ok := planner.next(job)
+	if !ok {
+		t.Fatalf("expected fallback retry after eta retries")
+	}
+	if path != cloneRetryPathNoETA {
+		t.Fatalf("expected no-eta fallback path, got %s", path)
+	}
+	if wait != cloneCopyConflictNoETAWaits[0] {
+		t.Fatalf("expected first no-eta wait %s, got %s", cloneCopyConflictNoETAWaits[0], wait)
+	}
+
+	for i := 1; i < len(cloneCopyConflictNoETAWaits); i++ {
+		wait, path, ok = planner.next(nil)
+		if !ok {
+			t.Fatalf("expected no-eta retry on fallback iteration %d", i)
+		}
+		if path != cloneRetryPathNoETA {
+			t.Fatalf("expected no-eta fallback path, got %s", path)
+		}
+		if wait != cloneCopyConflictNoETAWaits[i] {
+			t.Fatalf("expected fallback wait %s, got %s", cloneCopyConflictNoETAWaits[i], wait)
+		}
+	}
+
+	_, _, ok = planner.next(nil)
 	if ok {
-		t.Fatalf("expected eta retries to stop after %d retries", cloneCopyConflictETAMaxRetries)
+		t.Fatalf("expected retries to stop after eta and no-eta retries are exhausted")
 	}
 }
 
@@ -147,12 +171,45 @@ func TestCloneConflictRetryPlannerSwitchesToETAWhenAvailable(t *testing.T) {
 		}
 	}
 
-	_, path, ok = planner.next(job)
-	if ok {
-		t.Fatalf("expected eta retries to stop after %d retries", cloneCopyConflictETAMaxRetries)
+	wait, path, ok = planner.next(job)
+	if !ok {
+		t.Fatalf("expected no-eta fallback after eta retries")
+	}
+	if path != cloneRetryPathNoETA {
+		t.Fatalf("expected no-eta fallback path, got %s", path)
+	}
+	if wait != cloneCopyConflictNoETAWaits[1] {
+		t.Fatalf("expected resumed no-eta wait %s, got %s", cloneCopyConflictNoETAWaits[1], wait)
+	}
+}
+
+func TestCloneConflictRetryPlannerFallsBackWhenETAUnavailable(t *testing.T) {
+	planner := cloneConflictRetryPlanner{}
+	job := &msa.VolumeCopyJob{
+		HasETA: true,
+		ETA:    30 * time.Second,
+	}
+
+	wait, path, ok := planner.next(job)
+	if !ok {
+		t.Fatalf("expected initial eta retry")
 	}
 	if path != cloneRetryPathETA {
-		t.Fatalf("expected planner to remain on eta path, got %s", path)
+		t.Fatalf("expected eta path, got %s", path)
+	}
+	if wait != 30*time.Second+cloneCopyETASafetyBuffer {
+		t.Fatalf("expected eta wait %s, got %s", 30*time.Second+cloneCopyETASafetyBuffer, wait)
+	}
+
+	wait, path, ok = planner.next(nil)
+	if !ok {
+		t.Fatalf("expected no-eta fallback when eta unavailable")
+	}
+	if path != cloneRetryPathNoETA {
+		t.Fatalf("expected no-eta fallback path, got %s", path)
+	}
+	if wait != cloneCopyConflictNoETAWaits[0] {
+		t.Fatalf("expected first no-eta wait %s, got %s", cloneCopyConflictNoETAWaits[0], wait)
 	}
 }
 

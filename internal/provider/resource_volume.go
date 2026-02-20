@@ -302,6 +302,10 @@ func (r *volumeResource) Delete(ctx context.Context, req resource.DeleteRequest,
 
 	_, err := r.client.Execute(ctx, "delete", "volumes", target)
 	if err != nil {
+		if guardrail, ok := classifyVolumeDeleteError("volume", target, err); ok {
+			resp.Diagnostics.AddError(guardrail.summary, guardrail.detail)
+			return
+		}
 		resp.Diagnostics.AddError("Unable to delete volume", err.Error())
 		return
 	}
@@ -315,6 +319,83 @@ var errVolumeNotFound = errors.New("volume not found")
 var errVolumeTargetMissing = errors.New("volume target missing")
 var errVolumeTargetConflict = errors.New("volume target conflict")
 var errVolumeTargetUnknown = errors.New("volume target unknown")
+
+type volumeDeleteGuardrail struct {
+	summary string
+	detail  string
+}
+
+func classifyVolumeDeleteError(resourceKind, target string, err error) (volumeDeleteGuardrail, bool) {
+	var apiErr msa.APIError
+	if !errors.As(err, &apiErr) {
+		return volumeDeleteGuardrail{}, false
+	}
+
+	message := strings.TrimSpace(apiErr.Status.Response)
+	if message == "" {
+		return volumeDeleteGuardrail{}, false
+	}
+	normalized := strings.ToLower(message)
+	resourceKind = strings.TrimSpace(resourceKind)
+	if resourceKind == "" {
+		resourceKind = "volume"
+	}
+	normalizedKind := strings.ToLower(resourceKind)
+
+	targetLabel := strings.TrimSpace(target)
+	if targetLabel == "" {
+		targetLabel = resourceKind
+	}
+
+	if containsAny(normalized, "mapped", "mapping", "unmap") {
+		resourceLabel := titleCaseWord(resourceKind)
+		return volumeDeleteGuardrail{
+			summary: fmt.Sprintf("%s deletion blocked: mapped", resourceLabel),
+			detail: fmt.Sprintf(
+				"%s %q is still mapped to a host, host group, or initiator. Remove every `hpe_msa_volume_mapping` that references this %s (or unmap it directly on the array), then run `terraform apply` again. Array response: %s",
+				resourceLabel,
+				targetLabel,
+				normalizedKind,
+				message,
+			),
+		}, true
+	}
+
+	if containsAny(normalized, "in use", "in-use", "being used", "busy", "snapshot", "volume copy", "copy in progress") {
+		resourceLabel := titleCaseWord(resourceKind)
+		return volumeDeleteGuardrail{
+			summary: fmt.Sprintf("%s deletion blocked: in use", resourceLabel),
+			detail: fmt.Sprintf(
+				"%s %q is still in use. Delete dependent snapshots/clones and wait for active copy jobs to finish before retrying deletion. Array response: %s",
+				resourceLabel,
+				targetLabel,
+				message,
+			),
+		}, true
+	}
+
+	return volumeDeleteGuardrail{}, false
+}
+
+func titleCaseWord(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
+}
+
+func containsAny(value string, candidates ...string) bool {
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if strings.Contains(value, candidate) {
+			return true
+		}
+	}
+	return false
+}
 
 func (r *volumeResource) findVolume(ctx context.Context, name, id string) (*msa.Volume, error) {
 	response, err := r.client.Execute(ctx, "show", "volumes")

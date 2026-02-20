@@ -283,6 +283,10 @@ func (r *cloneResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 
 	_, err := r.client.Execute(ctx, "delete", "volumes", target)
 	if err != nil {
+		if guardrail, ok := classifyVolumeDeleteError("clone", target, err); ok {
+			resp.Diagnostics.AddError(guardrail.summary, guardrail.detail)
+			return
+		}
 		resp.Diagnostics.AddError("Unable to delete clone", err.Error())
 		return
 	}
@@ -314,29 +318,29 @@ func (p *cloneConflictRetryPlanner) next(job *msa.VolumeCopyJob) (time.Duration,
 	if job != nil && job.HasETA {
 		p.strategy = cloneConflictRetryStrategyETA
 		p.lastETA = job.ETA
-	} else if p.strategy == cloneConflictRetryStrategyUnset {
-		p.strategy = cloneConflictRetryStrategyNoETA
+		if p.etaRetries < cloneCopyConflictETAMaxRetries {
+			wait := cloneCopyETASafetyBuffer
+			if p.lastETA > 0 {
+				wait += p.lastETA
+			}
+			p.etaRetries++
+			return wait, cloneRetryPathETA, true
+		}
 	}
 
-	switch p.strategy {
-	case cloneConflictRetryStrategyETA:
-		if p.etaRetries >= cloneCopyConflictETAMaxRetries {
-			return 0, cloneRetryPathETA, false
-		}
-		wait := cloneCopyETASafetyBuffer
-		if p.lastETA > 0 {
-			wait += p.lastETA
-		}
-		p.etaRetries++
-		return wait, cloneRetryPathETA, true
-	default:
-		if p.noETARetries >= len(cloneCopyConflictNoETAWaits) {
-			return 0, cloneRetryPathNoETA, false
-		}
-		wait := cloneCopyConflictNoETAWaits[p.noETARetries]
-		p.noETARetries++
-		return wait, cloneRetryPathNoETA, true
+	if p.strategy == cloneConflictRetryStrategyUnset {
+		p.strategy = cloneConflictRetryStrategyNoETA
 	}
+	if p.strategy == cloneConflictRetryStrategyETA && (job == nil || !job.HasETA || p.etaRetries >= cloneCopyConflictETAMaxRetries) {
+		p.strategy = cloneConflictRetryStrategyNoETA
+	}
+	if p.noETARetries >= len(cloneCopyConflictNoETAWaits) {
+		return 0, cloneRetryPathNoETA, false
+	}
+
+	wait := cloneCopyConflictNoETAWaits[p.noETARetries]
+	p.noETARetries++
+	return wait, cloneRetryPathNoETA, true
 }
 
 type cloneConflictContext struct {
