@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -86,5 +87,83 @@ func TestAcquireDestroyGlobalLockWithOptionsReacquire(t *testing.T) {
 	}
 	if err := second.Release(ctx); err != nil {
 		t.Fatalf("release second lock: %v", err)
+	}
+}
+
+func TestAcquireDestroyGlobalLockWithOptionsReclaimsStaleByAge(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	lockDir := filepath.Join(t.TempDir(), "destroy-lock-stale-age.d")
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		t.Fatalf("create stale lock dir: %v", err)
+	}
+
+	ownerFile := filepath.Join(lockDir, "owner")
+	staleOwner := "owner=stale-owner\nacquired_at=2026-02-22T00:00:00Z\npid=999999\n"
+	if err := os.WriteFile(ownerFile, []byte(staleOwner), 0o600); err != nil {
+		t.Fatalf("write stale owner: %v", err)
+	}
+
+	old := time.Now().Add(-5 * time.Second)
+	if err := os.Chtimes(lockDir, old, old); err != nil {
+		t.Fatalf("set stale lock mtime: %v", err)
+	}
+	if err := os.Chtimes(ownerFile, old, old); err != nil {
+		t.Fatalf("set stale owner mtime: %v", err)
+	}
+
+	lock, err := acquireDestroyGlobalLockWithOptions(ctx, "new-owner", lockDir, 1*time.Second)
+	if err != nil {
+		t.Fatalf("acquire lock after stale reclaim: %v", err)
+	}
+	defer func() {
+		_ = lock.Release(ctx)
+	}()
+
+	ownerRaw, err := os.ReadFile(ownerFile)
+	if err != nil {
+		t.Fatalf("read owner after stale reclaim: %v", err)
+	}
+	if !strings.Contains(string(ownerRaw), "owner=new-owner") {
+		t.Fatalf("owner file not replaced after stale reclaim: %q", string(ownerRaw))
+	}
+}
+
+func TestAcquireDestroyGlobalLockWithOptionsReclaimsStaleDeadPID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	lockDir := filepath.Join(t.TempDir(), "destroy-lock-stale-pid.d")
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		t.Fatalf("create stale lock dir: %v", err)
+	}
+
+	ownerFile := filepath.Join(lockDir, "owner")
+	nonexistentPID := 999999
+	ownerContent := strings.Join([]string{
+		"owner=stale-owner",
+		"acquired_at=2026-02-22T00:00:00Z",
+		"pid=" + strconv.Itoa(nonexistentPID),
+		"",
+	}, "\n")
+	if err := os.WriteFile(ownerFile, []byte(ownerContent), 0o600); err != nil {
+		t.Fatalf("write stale owner: %v", err)
+	}
+
+	lock, err := acquireDestroyGlobalLockWithOptions(ctx, "fresh-owner", lockDir, 3*time.Second)
+	if err != nil {
+		t.Fatalf("acquire lock after dead pid reclaim: %v", err)
+	}
+	defer func() {
+		_ = lock.Release(ctx)
+	}()
+
+	ownerRaw, err := os.ReadFile(ownerFile)
+	if err != nil {
+		t.Fatalf("read owner after dead pid reclaim: %v", err)
+	}
+	if !strings.Contains(string(ownerRaw), "owner=fresh-owner") {
+		t.Fatalf("owner file not replaced after dead pid reclaim: %q", string(ownerRaw))
 	}
 }

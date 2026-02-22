@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -25,6 +26,11 @@ type destroyGlobalLock struct {
 	ownerFile  string
 	owner      string
 	acquiredAt time.Time
+}
+
+type destroyLockOwnerMetadata struct {
+	Owner string
+	PID   int
 }
 
 func acquireDestroyGlobalLock(ctx context.Context, owner string) (*destroyGlobalLock, error) {
@@ -79,6 +85,15 @@ func acquireDestroyGlobalLockWithOptions(ctx context.Context, owner, lockDir str
 		if !errors.Is(err, fs.ErrExist) {
 			return nil, fmt.Errorf("create destroy global lock directory %q: %w", lockDir, err)
 		}
+
+		reclaimed, reclaimErr := tryReapStaleDestroyGlobalLock(ctx, lockDir, wait)
+		if reclaimErr != nil {
+			return nil, reclaimErr
+		}
+		if reclaimed {
+			continue
+		}
+
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("timeout acquiring destroy global lock %q for owner %q after %s", lockDir, owner, wait)
 		}
@@ -89,6 +104,104 @@ func acquireDestroyGlobalLockWithOptions(ctx context.Context, owner, lockDir str
 		case <-time.After(destroyGlobalLockPollInterval):
 		}
 	}
+}
+
+func tryReapStaleDestroyGlobalLock(ctx context.Context, lockDir string, wait time.Duration) (bool, error) {
+	lockInfo, err := os.Stat(lockDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat destroy global lock %q: %w", lockDir, err)
+	}
+
+	ownerFile := filepath.Join(lockDir, "owner")
+	metadata, _ := readDestroyLockOwnerMetadata(ownerFile)
+
+	reasons := make([]string, 0, 2)
+	ownerAlive := false
+	if metadata.PID > 0 {
+		if processExists(metadata.PID) {
+			ownerAlive = true
+		} else {
+			reasons = append(reasons, fmt.Sprintf("dead_pid=%d", metadata.PID))
+		}
+	}
+
+	lockAge := time.Since(lockInfo.ModTime())
+	if !ownerAlive && lockAge >= wait {
+		reasons = append(reasons, fmt.Sprintf("age=%s", lockAge.Round(time.Second)))
+	}
+
+	if len(reasons) == 0 {
+		return false, nil
+	}
+
+	_ = os.Remove(ownerFile)
+	if err := os.Remove(lockDir); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return true, nil
+		}
+		if errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EBUSY) {
+			return false, nil
+		}
+		return false, fmt.Errorf("remove stale destroy global lock %q: %w", lockDir, err)
+	}
+
+	tflog.Warn(ctx, "reclaimed stale MSA destroy global lock", map[string]any{
+		"lock_dir":   lockDir,
+		"lock_owner": metadata.Owner,
+		"lock_pid":   metadata.PID,
+		"reasons":    strings.Join(reasons, ","),
+	})
+	return true, nil
+}
+
+func readDestroyLockOwnerMetadata(ownerFile string) (destroyLockOwnerMetadata, error) {
+	data, err := os.ReadFile(ownerFile)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return destroyLockOwnerMetadata{}, nil
+		}
+		return destroyLockOwnerMetadata{}, fmt.Errorf("read destroy lock owner metadata %q: %w", ownerFile, err)
+	}
+
+	metadata := destroyLockOwnerMetadata{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		switch key {
+		case "owner":
+			metadata.Owner = value
+		case "pid":
+			pid, parseErr := strconv.Atoi(value)
+			if parseErr == nil {
+				metadata.PID = pid
+			}
+		}
+	}
+
+	return metadata, nil
+}
+
+func processExists(pid int) bool {
+	if pid < 1 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 func (lock *destroyGlobalLock) Release(ctx context.Context) error {
