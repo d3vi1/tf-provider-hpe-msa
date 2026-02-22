@@ -286,7 +286,22 @@ func (r *cloneResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	_, err := r.client.Execute(ctx, "delete", "volumes", target)
+	lockOwner := fmt.Sprintf("clone:%s", target)
+	lock, err := acquireDestroyGlobalLock(ctx, lockOwner)
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to acquire destroy global lock", err.Error())
+		return
+	}
+	defer func() {
+		if releaseErr := lock.Release(ctx); releaseErr != nil {
+			tflog.Warn(ctx, "release MSA destroy global lock failed", map[string]any{
+				"lock_owner": lockOwner,
+				"error":      releaseErr.Error(),
+			})
+		}
+	}()
+
+	_, err = r.client.Execute(ctx, "delete", "volumes", target)
 	if err != nil {
 		if guardrail, ok := classifyVolumeDeleteError("clone", target, err); ok {
 			resp.Diagnostics.AddError(guardrail.summary, guardrail.detail)

@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 var _ resource.Resource = (*volumeMappingResource)(nil)
@@ -270,7 +271,22 @@ func (r *volumeMappingResource) Delete(ctx context.Context, req resource.DeleteR
 		return
 	}
 
-	_, err := r.client.Execute(ctx, "unmap", "volume", "initiator", targetSpec, volume)
+	lockOwner := fmt.Sprintf("volume_mapping:%s:%s", targetSpec, volume)
+	lock, err := acquireDestroyGlobalLock(ctx, lockOwner)
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to acquire destroy global lock", err.Error())
+		return
+	}
+	defer func() {
+		if releaseErr := lock.Release(ctx); releaseErr != nil {
+			tflog.Warn(ctx, "release MSA destroy global lock failed", map[string]any{
+				"lock_owner": lockOwner,
+				"error":      releaseErr.Error(),
+			})
+		}
+	}()
+
+	_, err = r.client.Execute(ctx, "unmap", "volume", "initiator", targetSpec, volume)
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to unmap volume", err.Error())
 		return

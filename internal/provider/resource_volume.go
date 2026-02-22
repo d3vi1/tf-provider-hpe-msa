@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 var _ resource.Resource = (*volumeResource)(nil)
@@ -305,7 +306,22 @@ func (r *volumeResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	_, err := r.client.Execute(ctx, "delete", "volumes", target)
+	lockOwner := fmt.Sprintf("volume:%s", target)
+	lock, err := acquireDestroyGlobalLock(ctx, lockOwner)
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to acquire destroy global lock", err.Error())
+		return
+	}
+	defer func() {
+		if releaseErr := lock.Release(ctx); releaseErr != nil {
+			tflog.Warn(ctx, "release MSA destroy global lock failed", map[string]any{
+				"lock_owner": lockOwner,
+				"error":      releaseErr.Error(),
+			})
+		}
+	}()
+
+	_, err = r.client.Execute(ctx, "delete", "volumes", target)
 	if err != nil {
 		if guardrail, ok := classifyVolumeDeleteError("volume", target, err); ok {
 			resp.Diagnostics.AddError(guardrail.summary, guardrail.detail)

@@ -40,6 +40,10 @@ These are used by local tools and acceptance tests. Do **not** commit real value
 - `MSA_POOL` (or vdisk/pool name for volume placement)
 - Optional: `MSA_TEST_HOST_NAME`, `MSA_TEST_INITIATOR_WWPN`, `MSA_TEST_INITIATOR_IQN`
 - Optional: `MSA_TEST_PREFIX` (prefix for acceptance-test resource names)
+- Optional: `HPE_MSA_DESTROY_GLOBAL_LOCK_DIR` (default: `/tmp/xconnector-directlun-destroy-global.lock.d`)
+- Optional: `HPE_MSA_DESTROY_GLOBAL_LOCK_WAIT_SECONDS` (default: `600`)
+
+`hpe_msa_volume_mapping`, `hpe_msa_volume`, and `hpe_msa_clone` delete operations acquire this lock so host-side DirectLUN cleanup and MSA unmap/delete do not interleave.
 
 ## Development
 
