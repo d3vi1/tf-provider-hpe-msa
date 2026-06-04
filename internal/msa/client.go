@@ -281,6 +281,17 @@ func (c *Client) invalidateSession() {
 }
 
 func (c *Client) getWithRetry(ctx context.Context, url string, headers map[string]string) ([]byte, http.Header, int, error) {
+	// Serialize every MSA command through a single process-wide lock so that
+	// concurrent Terraform resource operations never issue overlapping commands
+	// to the array. The critical section spans the full request+response cycle
+	// of one command (including transient-failure retries), which also makes
+	// LUN auto-assignment race-free. getWithRetry is the lowest common point
+	// that every command (login, logout, show, create, map, delete, ...) passes
+	// through, and it is never invoked while this lock is already held, so no
+	// re-entrant deadlock is possible.
+	commandMu.Lock()
+	defer commandMu.Unlock()
+
 	var lastBody []byte
 	var lastHeader http.Header
 	var lastStatus int

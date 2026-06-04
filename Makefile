@@ -1,7 +1,14 @@
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
 
-.PHONY: lint test testacc gofmt-check
+VERSION ?= 0.1.3
+BINARY ?= terraform-provider-hpe-msa
+LDFLAGS ?= -X main.version=$(VERSION)
+
+.PHONY: build lint test testacc gofmt-check
+
+build:
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/tf-provider-hpe-msa
 
 lint: gofmt-check
 	$(GOLANGCI_LINT) run ./...

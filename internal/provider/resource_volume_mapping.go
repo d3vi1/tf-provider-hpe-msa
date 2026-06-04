@@ -82,10 +82,11 @@ func (r *volumeMappingResource) Schema(_ context.Context, _ resource.SchemaReque
 				},
 			},
 			"lun": schema.StringAttribute{
-				Description: "LUN for the mapping (required for explicit mappings unless access=no-access).",
+				Description: "LUN for the mapping. Omit to let the MSA auto-assign the first free LUN (only allowed when ports is empty); the assigned value is then read back into state.",
 				Optional:    true,
+				Computed:    true,
 				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.RequiresReplaceIfConfigured(),
 				},
 			},
 			"ports": schema.SetAttribute{
@@ -154,13 +155,12 @@ func (r *volumeMappingResource) Create(ctx context.Context, req resource.CreateR
 		return
 	}
 
+	// lun is Optional+Computed: when the operator omits it (null/unknown), the
+	// value is empty here and we ask the MSA to auto-assign the first free LUN,
+	// then read the assigned value back into state. Auto-assign is only safe
+	// when no explicit ports are requested, so omitting lun together with ports
+	// remains an error.
 	lun := strings.TrimSpace(plan.LUN.ValueString())
-	if access != "no-access" {
-		if lun == "" {
-			resp.Diagnostics.AddError("Invalid configuration", "lun is required for explicit mappings")
-			return
-		}
-	}
 	if len(ports) > 0 && lun == "" {
 		resp.Diagnostics.AddError("Invalid configuration", "lun is required when ports are specified")
 		return
